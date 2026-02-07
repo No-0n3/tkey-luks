@@ -1,0 +1,49 @@
+# Build outputs
+*.o
+*.a
+*.so
+*.bin
+*.elf
+/build/
+/dist/
+/target/
+/out/
+
+# Rust
+Cargo.lock
+**/*.rs.bk
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+
+# Test artifacts
+/test/**/*.img
+/test/**/*.qcow2
+/test/**/*.raw
+/test/**/*.log
+/test/qemu/vm/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Credentials and secrets
+*.key
+*.pem
+secrets/
+.env
+
+# Temporary files
+tmp/
+*.tmp
+.cache/
