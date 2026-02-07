@@ -86,34 +86,44 @@ echo ""
 echo "[Step 3/5] Git Submodules"
 echo "─────────────────────────────────────────"
 echo ""
-echo "⚠ IMPORTANT: Submodule URLs need verification"
+echo "✓ Tillitis repositories configured:"
 echo ""
-echo "The .gitmodules file contains placeholder URLs."
-echo "Before proceeding, you need to:"
+echo "  • tkey-libs         - Device app libraries"
+echo "  • tkey-device-signer - Ed25519 signing (reference)"
+echo "  • tkey-devtools     - Development tools"
 echo ""
-echo "1. Find correct Tillitis repository URLs"
-echo "   Visit: https://github.com/tillitis"
+echo "These submodules provide:"
+echo "  - Libraries for building device apps"
+echo "  - Reference implementation (signer)"
+echo "  - Tools like tkey-runapp"
 echo ""
-echo "2. Update .gitmodules with correct URLs"
-echo ""
-echo "3. Initialize submodules:"
-echo "   git submodule update --init --recursive"
-echo ""
-read -p "Have you updated .gitmodules with correct URLs? (y/N) " -n 1 -r
+read -p "Initialize submodules now? (Y/n) " -n 1 -r
 echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
+if [[ ! $REPLY =~ ^[Nn]$ ]]; then
     echo ""
     echo "Initializing submodules..."
-    git submodule update --init --recursive || {
+    if git submodule update --init --recursive; then
+        echo ""
+        echo "✓ Submodules initialized successfully"
+        echo ""
+        echo "Building tkey-libs..."
+        cd submodules/tkey-libs && make && cd ../..
+        echo ""
+        echo "✓ tkey-libs built"
+        echo ""
+        echo "Note: tkey-devtools requires Go. Build with:"
+        echo "  cd submodules/tkey-devtools && make"
+    else
         echo ""
         echo "⚠ Submodule initialization failed"
-        echo "This is expected if URLs are not yet correct"
-    }
+        echo "Check your internet connection and try again"
+    fi
 else
     echo ""
-    echo "Skipping submodule initialization for now"
-    echo "You can do this later with:"
+    echo "Skipping submodule initialization"
+    echo "Initialize later with:"
     echo "  git submodule update --init --recursive"
+    echo "  cd submodules/tkey-libs && make"
 fi
 echo ""
 read -p "Press Enter to continue..."

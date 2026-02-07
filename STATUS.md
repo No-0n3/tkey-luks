@@ -49,17 +49,18 @@
 
 ### Immediate (Next 1-2 days)
 
-1. **Verify Tillitis Repository URLs**
-   - [ ] Find correct tkey-libs repository
-   - [ ] Find correct tkey-sign repository
-   - [ ] Update .gitmodules with correct URLs
-   - [ ] Initialize submodules: `git submodule update --init`
+1. **Initialize Tillitis Submodules** ✅
+   - [x] tkey-libs: https://github.com/tillitis/tkey-libs
+   - [x] tkey-device-signer: https://github.com/tillitis/tkey-device-signer
+   - [x] tkey-devtools: https://github.com/tillitis/tkey-devtools
+   - [ ] Run: `git submodule update --init --recursive`
+   - [ ] Build tkey-libs: `cd submodules/tkey-libs && make`
 
-2. **Evaluate tkey-sign**
-   - [ ] Clone tkey-sign repository
-   - [ ] Test static compilation
-   - [ ] Evaluate if suitable for LUKS key derivation
-   - [ ] Decide: use tkey-sign or build custom
+2. **Evaluate tkey-device-signer**
+   - [ ] Review tkey-device-signer code (Ed25519 signing)
+   - [ ] Understand signing protocol
+   - [ ] Adapt for LUKS key derivation (sign challenge → derive key)
+   - [ ] Decide: adapt tkey-device-signer or build custom device app
 
 3. **Set Up Development Environment**
    - [ ] Run: `./scripts/setup-dev.sh`

@@ -184,11 +184,18 @@ tkey-luks/
 ## Dependencies
 
 ### Build Dependencies
-- **C/C++ Toolchain:** gcc, g++, make
-- **Go Toolchain:** go 1.20+ (recommended for TKey clients)
+- **Go Toolchain:** go 1.20+ (required for TKey clients)
+- **LLVM/Clang:** Version 15+ with riscv32 support (-march=rv32iczmmul)
+- **LLD:** LLVM linker
 - **TKey SDK:** Tillitis development tools
-- **Static Linking:** musl-libc, static libraries
-- **LLVM/Clang:** For advanced static compilation
+- **libusb:** libusb-1.0-0-dev (for USB communication)
+- **Static Linking:** musl-libc (optional, for smaller C binaries)
+
+On Ubuntu 22.10+:
+```bash
+sudo apt install build-essential clang lld llvm golang \
+    libusb-1.0-0-dev pkg-config cryptsetup
+```
 
 ### Runtime Dependencies (initramfs)
 - cryptsetup (already in initramfs)
@@ -202,14 +209,17 @@ tkey-luks/
 
 ## Git Submodules to Add
 
-1. **tkey-libs** - Core libraries for TKey communication
+1. **tkey-libs** - Core libraries for TKey device app development
    - Repository: https://github.com/tillitis/tkey-libs
+   - Pre-compiled releases available
 
-2. **tkey-sign** - Reference signing implementation
-   - Repository: https://github.com/tillitis/tkey-sign (verify correct repo)
+2. **tkey-device-signer** - Ed25519 signing device app (reference implementation)
+   - Repository: https://github.com/tillitis/tkey-device-signer
+   - Can be adapted for LUKS key derivation
 
-3. **tkey-device-signer** - Device-side signing implementation
-   - Repository: Part of Tillitis SDK
+3. **tkey-devtools** - Development tools (tkey-runapp, run-tkey-qemu, etc.)
+   - Repository: https://github.com/tillitis/tkey-devtools
+   - Contains tkey-runapp for loading device apps
 
 ## Security Considerations
 

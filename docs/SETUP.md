@@ -11,12 +11,15 @@
 - Linux kernel 5.x or later (with LUKS support)
 - initramfs-tools (Debian/Ubuntu) or dracut (Fedora/RHEL)
 - cryptsetup
-- Build tools (gcc, make)
+- Go 1.20+ (for client development)
+- LLVM/Clang 15+ with riscv32 support (for device app)
+- libusb-1.0-0-dev (for USB communication)
 - QEMU (for testing)
 
 ### Optional
-- Go toolchain (recommended for TKey client development)
-- RISC-V GCC toolchain (for device app development)
+- tkey-runapp (from tkey-devtools, for testing device apps)
+- QEMU emulator with TKey support (for development without hardware)
+- Podman/Docker (for using tkey-builder container)
 
 ## Initial Setup
 

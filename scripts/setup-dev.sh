@@ -27,8 +27,10 @@ case $OS in
         sudo apt-get update
         sudo apt-get install -y \
             build-essential \
-            gcc \
-            make \
+            clang \
+            lld \
+            llvm \
+            golang \
             pkg-config \
             libusb-1.0-0-dev \
             cryptsetup \
@@ -39,16 +41,15 @@ case $OS in
             git \
             curl
         
-        # Optional: Go for client development (recommended for TKey)
-        if ! command -v go &> /dev/null; then
-            echo "Installing Go..."
-            sudo apt-get install -y golang-go
-        fi
+        echo "✓ Installed build tools and TKey dependencies"
         ;;
     
     fedora|rhel|centos)
         sudo dnf install -y \
-            gcc \
+            clang \
+            lld \
+            llvm \
+            golang \
             make \
             pkgconfig \
             libusb-devel \
@@ -59,51 +60,92 @@ case $OS in
             git \
             curl
         
-        if ! command -v go &> /dev/null; then
-            sudo dnf install -y golang
-        fi
+        echo "✓ Installed build tools and TKey dependencies"
         ;;
     
     arch)
         sudo pacman -Sy --noconfirm \
-            base-devel \
+            clang \
+            lld \
+            llvm \
+            go \
             libusb \
             cryptsetup \
             mkinitcpio \
             qemu-system-x86 \
-            git \
+            gitt \
             go
         ;;
     
-    *)
-        echo "Warning: Unknown OS, please install dependencies manually"
-        echo "Required packages:"
-        echo "  - build-essential (gcc, make)"
+    *)clang, lld, llvm (version 15+ with riscv32 support)"
+        echo "  - golang (version 1.20+)"
         echo "  - libusb-1.0-dev"
         echo "  - cryptsetup"
         echo "  - initramfs-tools or dracut"
         echo "  - qemu-system-x86"
         echo "  - git"
-        ;;
-esac
+        echo ""
+        echo "See https://dev.tillitis.se/tools/ for detailed instructionsptsetup"
+        echo "  - initramfs-tools or dracut"
+        echo "  - qemu-system-x86"
+echo "Initializing TKey libraries and tools..."
+if git submodule update --init --recursive; then
+    echo "✓ Submodules initialized"
+    
+    # Build tkey-libs
+    if [ -d "submodules/tkey-libs" ]; then
+        echo ""
+        echo "Building tkey-libs..."
+        cd submodules/tkey-libs
+        make
+        cd ../..
+        echo "✓ tkey-libs built"
+    fi
+    
+    # Build tkey-devtools (needs Go)
+    if [ -d "submodules/tkey-devtools" ] && command -v go &> /dev/null; then
+        echo ""
+        echo "Building tkey-devtools..."
+        cd submodules/tkey-devtools
+        make
+        cd ../..
+        echo "✓ tkey-devtools built (includes tkey-runapp)"
+    figo &> /dev/null && [ -x "submodules/tkey-devtools/tkey-runapp" ]; then
+    echo "✓ TKey tools ready (tkey-runapp found)"
+elif command -v go &> /dev/null; then
+    echo "⚠ tkey-runapp not built yet"
+    echo "  Build with: cd submodules/tkey-devtools && make"
+else
+    echo "⚠ Go not installed - required for TKey client development"
+    echo "  Install: sudo apt-get install golang (Ubuntu/Debian)"
+fi
 
+# Check for LLVM/Clang with riscv32 support
+if command -v clang &> /dev/null; then
+    CLANG_VERSION=$(clang --version | head -1 | grep -oP '\d+' | head -1)
+    if [ "$CLANG_VERSION" -ge 15 ]; then
+        echo "✓ Clang $CLANG_VERSION found (device app compilation ready)"
+    else
+        echo "⚠ Clang $CLANG_VERSION found (version 15+ recommended)"
+    fi
+else
+    echo "⚠ Clang not found (required for device app development)
+    ecTKey development:"
+echo "  submodules/tkey-devtools/tkey-runapp  - Load and run device apps"
+echo "  submodules/tkey-libs/                 - Device app libraries"
 echo ""
-echo "[2/4] Setting up git submodules..."
-git submodule update --init --recursive || {
-    echo "Warning: Failed to initialize submodules"
-    echo "You may need to add correct Tillitis repository URLs to .gitmodules"
-    echo ""
-    echo "Expected repositories:"
-    echo "  - tkey-libs: Core TKey libraries"
-    echo "  - tkey-sign: Reference signing implementation"
-    echo ""
-    echo "Check https://github.com/tillitis for correct URLs"
-}
-
+echo "Next steps:"
+echo "  1. Review PLAN.md for project overview"
+echo "  2. Examine submodules/tkey-device-signer for reference"
+echo "  3. Implement device app (device-app/src/)"
+echo "  4. Implement client (client/main.go.example -> main.go)"
+echo "  5. Test: ./test/luks-setup/create-test-image.sh"
 echo ""
-echo "[3/4] Creating development directories..."
-mkdir -p build
-mkdir -p test/qemu/vm
+echo "Documentation:"
+echo "  - PLAN.md: Implementation plan"
+echo "  - docs/SECURITY.md: Security considerations"
+echo "  - docs/TESTING.md: Testing guide"
+echo "  - https://dev.tillitis.se/: TKey Developer Handbook
 mkdir -p docs
 
 echo ""

@@ -1,14 +1,17 @@
 # TKey Libraries and Tools
-# Note: Verify these URLs are correct before adding submodules
+# Official Tillitis repositories for TKey development
 
-# Core TKey libraries for communication
-# [submodule "submodules/tkey-libs"]
-# 	path = submodules/tkey-libs
-# 	url = https://github.com/tillitis/tkey-libs.git
+# Core TKey device libraries (for device app development)
+[submodule "submodules/tkey-libs"]
+	path = submodules/tkey-libs
+	url = https://github.com/tillitis/tkey-libs.git
 
-# TKey signing application (reference implementation)
-# [submodule "submodules/tkey-sign"]
-# 	path = submodules/tkey-sign
-# 	url = https://github.com/tillitis/tkey-sign.git
+# Ed25519 signing device application (reference implementation)
+[submodule "submodules/tkey-device-signer"]
+	path = submodules/tkey-device-signer
+	url = https://github.com/tillitis/tkey-device-signer.git
 
-# Add actual submodules after verifying correct repository URLs
+# TKey development tools (tkey-runapp, etc.)
+[submodule "submodules/tkey-devtools"]
+	path = submodules/tkey-devtools
+	url = https://github.com/tillitis/tkey-devtools.git

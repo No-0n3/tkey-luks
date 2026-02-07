@@ -27,9 +27,11 @@ See [PLAN.md](PLAN.md) for detailed implementation plan.
 
 - Tillitis TKey hardware device
 - Linux system (Debian/Ubuntu recommended)
+- Go 1.20+ (for client development)
+- LLVM/Clang 15+ (for device app development)
 - initramfs-tools or dracut
 - cryptsetup
-- Build tools (gcc, make, or go)
+- libusb-1.0-0-dev
 
 ### Installation
 
