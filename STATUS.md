@@ -42,6 +42,8 @@
 - [x] Device application skeleton (C)
 - [x] Function prototypes defined
 - [x] TODO markers for implementation
+- [x] Build system switched to Clang/LLVM (matches Tillitis)
+- [x] tkey-device-signer selected as base for device app
 
 ---
 
@@ -49,18 +51,20 @@
 
 ### Immediate (Next 1-2 days)
 
-1. **Initialize Tillitis Submodules** ✅
+1. **Initialize Tillitis Submodules** ✅ **COMPLETED**
    - [x] tkey-libs: https://github.com/tillitis/tkey-libs
    - [x] tkey-device-signer: https://github.com/tillitis/tkey-device-signer
    - [x] tkey-devtools: https://github.com/tillitis/tkey-devtools
-   - [ ] Run: `git submodule update --init --recursive`
-   - [ ] Build tkey-libs: `cd submodules/tkey-libs && make`
+   - [x] Run: `git submodule add` for all repos
+   - [x] Build tkey-libs: Successfully compiled with clang
 
-2. **Evaluate tkey-device-signer**
-   - [ ] Review tkey-device-signer code (Ed25519 signing)
-   - [ ] Understand signing protocol
-   - [ ] Adapt for LUKS key derivation (sign challenge → derive key)
-   - [ ] Decide: adapt tkey-device-signer or build custom device app
+2. **Use tkey-device-signer as Base** 🎯 **IN PROGRESS**
+   - [x] Decision: Use tkey-device-signer as base implementation
+   - [ ] Copy/adapt protocol structure from signer/main.c
+   - [ ] Replace Ed25519 signing with key derivation (BLAKE2b)
+   - [ ] Keep USS (User Supplied Secret) support
+   - [ ] Modify commands: CMD_GET_SIG → CMD_DERIVE_KEY
+   - [ ] Build adapted device app
 
 3. **Set Up Development Environment**
    - [ ] Run: `./scripts/setup-dev.sh`
