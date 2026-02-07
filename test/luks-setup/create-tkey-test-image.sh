@@ -1,10 +1,10 @@
 #!/bin/bash
-# Create a 10MB LUKS test image for TKey-LUKS testing
+# Create a 100MB LUKS test image for TKey-LUKS testing
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IMAGE_FILE="${1:-test-luks-10mb.img}"
-IMAGE_SIZE="10M"
+IMAGE_FILE="${1:-test-luks-100mb.img}"
+IMAGE_SIZE="100M"
 
 echo "=== Creating TKey-LUKS Test Image ==="
 echo ""
@@ -14,8 +14,8 @@ echo "  Size: $IMAGE_SIZE"
 echo ""
 
 # Create empty image file
-echo "[1/6] Creating 10MB image file..."
-dd if=/dev/zero of="$IMAGE_FILE" bs=1M count=10 status=progress
+echo "[1/6] Creating 100MB image file..."
+dd if=/dev/zero of="$IMAGE_FILE" bs=1M count=100 status=progress
 
 # Set up loop device
 echo ""

@@ -31,16 +31,16 @@ try:
 except ImportError:
     HAS_NACL = False
 
-# BLAKE2s is in hashlib
-def blake2s_derive(key_material, challenge):
+# BLAKE2b is in hashlib
+def blake2b_derive(key_material, challenge):
     """
-    Derive LUKS key using BLAKE2s
-    Matches: blake2s(output, 64, key_material, 64, challenge, challenge_len)
+    Derive LUKS key using BLAKE2b (supports 64-byte output)
+    Matches: crypto_blake2b_keyed(output, 64, key_material, 64, challenge, challenge_len)
     """
     import hashlib
-    h = hashlib.blake2s(
+    h = hashlib.blake2b(
         challenge,
-        digest_size=64,  # 512 bits output
+        digest_size=64,  # 512 bits output (BLAKE2b supports up to 64 bytes)
         key=key_material,
         person=b"tkey-luks"  # Personalization string
     )
@@ -109,8 +109,8 @@ def main():
     
     # Step 3: Derive LUKS key using BLAKE2s
     print()
-    print("[3/3] Deriving LUKS key with BLAKE2s...")
-    derived_key = blake2s_derive(secret_key, challenge)
+    print(f"[3/3] Deriving LUKS key with BLAKE2b...")
+    derived_key = blake2b_derive(secret_key, challenge)
     
     print()
     print("=== Derived LUKS Key ===")

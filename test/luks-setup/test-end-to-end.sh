@@ -12,12 +12,12 @@ echo ""
 
 # Step 1: Create test image
 echo "──────────────────────────────────────────────────────────────"
-echo " Step 1: Create 10MB LUKS test image"
+echo " Step 1: Create 100MB LUKS test image"
 echo "──────────────────────────────────────────────────────────────"
 echo ""
 
-if [ -f "test-luks-10mb.img" ]; then
-    echo "Test image already exists: test-luks-10mb.img"
+if [ -f "test-luks-100mb.img" ]; then
+    echo "Test image already exists: test-luks-100mb.img"
     read -p "Recreate it? (y/N) " -n 1 -r
 echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -53,7 +53,7 @@ echo "────────────────────────�
 echo ""
 
 chmod +x add-tkey-key.sh
-./add-tkey-key.sh test-luks-10mb.img tkey-derived-key.bin
+./add-tkey-key.sh test-luks-100mb.img tkey-derived-key.bin
 
 echo ""
 read -p "Press Enter to continue to Step 4..."
@@ -66,7 +66,7 @@ echo "────────────────────────�
 echo ""
 
 echo "Testing unlock with TKey-derived key..."
-LOOP_DEV=$(sudo losetup -f --show test-luks-10mb.img)
+LOOP_DEV=$(sudo losetup -f --show test-luks-100mb.img)
 echo "Loop device: $LOOP_DEV"
 
 echo ""
@@ -120,7 +120,7 @@ echo "✓ Added TKey key to LUKS slot"
 echo "✓ Successfully unlocked LUKS with TKey key"
 echo ""
 echo "Files created:"
-echo "  - test-luks-10mb.img (LUKS encrypted)"
+echo "  - test-luks-100mb.img (LUKS encrypted)"
 echo "  - tkey-derived-key.bin (64-byte derived key)"
 echo "  - tkey-derived-key.hex (key in hex format)"
 echo ""

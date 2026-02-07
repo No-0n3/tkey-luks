@@ -3,7 +3,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IMAGE_FILE="${1:-test-luks-10mb.img}"
+IMAGE_FILE="${1:-test-luks-100mb.img}"
 KEYFILE="${2:-tkey-derived-key.bin}"
 
 if [ ! -f "$IMAGE_FILE" ]; then

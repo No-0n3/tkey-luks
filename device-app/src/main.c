@@ -336,9 +336,9 @@ static enum state deriving_commands(enum state state, struct context *ctx,
 		// - Input: challenge from initramfs
 		// - Key: secret_key (derived from CDI+USS)
 		// - Output: 64-byte key for LUKS
-		blake2s(derived_key, sizeof(derived_key), ctx->secret_key,
-			sizeof(ctx->secret_key), ctx->challenge,
-			ctx->challenge_size);
+		crypto_blake2b_keyed(derived_key, sizeof(derived_key),
+				     ctx->secret_key, sizeof(ctx->secret_key),
+				     ctx->challenge, ctx->challenge_size);
 
 		debug_puts("Sending derived key!\n");
 		memcpy_s(rsp + 1, CMDLEN_MAXBYTES, derived_key,
