@@ -39,11 +39,10 @@ case $OS in
             git \
             curl
         
-        # Optional: Rust for client development
-        if ! command -v cargo &> /dev/null; then
-            echo "Installing Rust..."
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-            source "$HOME/.cargo/env"
+        # Optional: Go for client development (recommended for TKey)
+        if ! command -v go &> /dev/null; then
+            echo "Installing Go..."
+            sudo apt-get install -y golang-go
         fi
         ;;
     
@@ -60,9 +59,8 @@ case $OS in
             git \
             curl
         
-        if ! command -v cargo &> /dev/null; then
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-            source "$HOME/.cargo/env"
+        if ! command -v go &> /dev/null; then
+            sudo dnf install -y golang
         fi
         ;;
     
@@ -74,7 +72,7 @@ case $OS in
             mkinitcpio \
             qemu-system-x86 \
             git \
-            rust
+            go
         ;;
     
     *)

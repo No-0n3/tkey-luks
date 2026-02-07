@@ -1,4 +1,8 @@
 # TKey-LUKS Client Makefile
+#
+# NOTE: Go is the recommended language for TKey client applications.
+# This C implementation is provided as an alternative.
+# For Go implementation, see: go.mod and main.go (TODO)
 
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -std=c11
@@ -72,11 +76,19 @@ config:
 
 # Notes for future development:
 # 
+# RECOMMENDED: Consider implementing in Go (standard for TKey clients)
+#   - Better TKey library support
+#   - Easier static compilation
+#   - Standard in Tillitis ecosystem
+#
 # TODO: Add actual TKey library dependencies
 # TODO: Add cryptsetup library integration  
 # TODO: Implement static linking with musl-libc for smaller binary
 # TODO: Add tests for each component
 # TODO: Add cross-compilation support
+#
+# For Go implementation:
+#   go build -ldflags="-s -w" -o tkey-luks-unlock
 #
 # For musl-libc static build:
 #   CC=musl-gcc make

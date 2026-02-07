@@ -29,7 +29,7 @@ See [PLAN.md](PLAN.md) for detailed implementation plan.
 - Linux system (Debian/Ubuntu recommended)
 - initramfs-tools or dracut
 - cryptsetup
-- Build tools (gcc, make, or rust)
+- Build tools (gcc, make, or go)
 
 ### Installation
 

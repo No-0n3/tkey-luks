@@ -15,7 +15,7 @@
 - QEMU (for testing)
 
 ### Optional
-- Rust toolchain (if building client in Rust)
+- Go toolchain (recommended for TKey client development)
 - RISC-V GCC toolchain (for device app development)
 
 ## Initial Setup

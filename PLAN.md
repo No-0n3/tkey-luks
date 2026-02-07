@@ -104,10 +104,10 @@ tkey-luks/
 │   ├── Makefile
 │   └── src/
 ├── client/                      # Client application (initramfs)
-│   ├── Cargo.toml               # Rust project (if using Rust)
+│   ├── go.mod                   # Go module (if using Go)
 │   ├── Makefile                 # Build system
 │   └── src/
-│       └── main.c               # Or main.rs for Rust
+│       └── main.c               # Or main.go for Go
 ├── initramfs-hooks/             # initramfs integration
 │   ├── hooks/                   # Hook scripts
 │   │   └── tkey-luks
@@ -185,7 +185,7 @@ tkey-luks/
 
 ### Build Dependencies
 - **C/C++ Toolchain:** gcc, g++, make
-- **Rust Toolchain:** rustc, cargo (if using Rust)
+- **Go Toolchain:** go 1.20+ (recommended for TKey clients)
 - **TKey SDK:** Tillitis development tools
 - **Static Linking:** musl-libc, static libraries
 - **LLVM/Clang:** For advanced static compilation
@@ -308,7 +308,7 @@ fallback:
 ## Open Questions
 
 1. **Which Tillitis repos should we use?** - Need to verify correct upstream repos
-2. **C or Rust for client?** - Rust offers better memory safety, C might be simpler
+2. **C or Go for client?** - Go is standard for TKey clients and offers good performance
 3. **Key storage format?** - How do we enroll TKey initially?
 4. **Multiple TKeys?** - Support for backup keys?
 5. **Distribution support?** - Start with Debian/Ubuntu or support multiple?

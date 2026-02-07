@@ -9,9 +9,9 @@
 /target/
 /out/
 
-# Rust
-Cargo.lock
-**/*.rs.bk
+# Go
+go.sum
+vendor/
 
 # Python
 __pycache__/

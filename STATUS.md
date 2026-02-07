@@ -178,10 +178,10 @@
 
 ### Decision 2: Client Language
 **Options:**
-- A) C (current, simpler)
-- B) Rust (safer, modern)
+- A) C (current implementation)
+- B) Go (recommended for TKey, standard in Tillitis ecosystem)
 
-**Current:** C (can switch if needed)
+**Current:** C (Go is recommended for TKey clients)
 
 ### Decision 3: Key Derivation
 **Options:**

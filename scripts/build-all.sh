@@ -36,10 +36,10 @@ if [ -f "$PROJECT_ROOT/client/Makefile" ]; then
     make clean || true
     make
     echo "✓ Client built"
-elif [ -f "$PROJECT_ROOT/client/Cargo.toml" ]; then
+elif [ -f "$PROJECT_ROOT/client/go.mod" ]; then
     cd "$PROJECT_ROOT/client"
-    cargo build --release
-    echo "✓ Client built (Rust)"
+    go build -o tkey-luks-unlock
+    echo "✓ Client built (Go)"
 else
     echo "⚠ Client build system not found, skipping"
 fi

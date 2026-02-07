@@ -55,7 +55,7 @@ done
 # Check optional tools
 echo ""
 echo "Optional tools:"
-for cmd in cargo qemu-system-x86_64 riscv32-unknown-elf-gcc; do
+for cmd in go qemu-system-x86_64 riscv32-unknown-elf-gcc; do
     if command -v $cmd &> /dev/null; then
         echo "✓ $cmd found"
     else
