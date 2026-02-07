@@ -16,8 +16,13 @@ CFLAGS += -fno-common -fno-builtin-printf -fno-builtin-putchar
 CFLAGS += -nostdlib -mno-relax -flto
 CFLAGS += -Wall -Werror=implicit-function-declaration
 
-# Linker flags
-LDFLAGS = -T ../submodules/tkey-libs/app.ld
+# Library paths
+LIBDIR = ../submodules/tkey-libs
+
+# Linker flags (matching tkey-device-signer)
+LDFLAGS = -T $(LIBDIR)/app.lds
+LDFLAGS += -L $(LIBDIR)
+LDFLAGS += -lcommon -lcrt0
 LDFLAGS += -nostdlib -mno-relax
 LDFLAGS += -fuse-ld=lld-20
 
@@ -27,16 +32,12 @@ ELF = $(TARGET).elf
 BIN = $(TARGET).bin
 
 # Source files
-SRCS = src/main.c
-# TODO: Add TKey SDK sources when submodules are set up
-# SRCS += ../submodules/tkey-libs/app_start.S
-# SRCS += ../submodules/tkey-libs/blake2s.c
+SRCS = src/main.c src/app_proto.c
 
 OBJS = $(SRCS:.c=.o)
-OBJS := $(OBJS:.S=.o)
 
 # Include paths
-INCLUDES = -I../submodules/tkey-libs/include
+INCLUDES = -I$(LIBDIR)/include -I$(LIBDIR)
 
 # Default target
 all: check-toolchain $(BIN)
@@ -67,7 +68,7 @@ check-toolchain:
 
 # Build ELF executable
 $(ELF): $(OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) $(OBJS) $(LDFLAGS) -L $(LIBDIR)/monocypher -lmonocypher -L $(LIBDIR)/blake2s -lblake2s -o $@
 
 # Convert ELF to raw binary for TKey
 $(BIN): $(ELF)

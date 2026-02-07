@@ -1,159 +1,509 @@
-/* TKey-LUKS Device Application
- * 
- * This application runs on the Tillitis TKey hardware.
- * It receives challenges from the host and responds with signatures
- * derived from the TKey's unique device secret (USS).
- * 
- * Protocol:
- * 1. Receive challenge (32 bytes)
- * 2. Sign challenge using TKey USS
- * 3. Return signature (64 bytes)
- * 
- * The signature can then be used by the host to derive LUKS keys.
- */
+// SPDX-FileCopyrightText: 2026 TKey-LUKS Project
+// SPDX-License-Identifier: BSD-2-Clause
+//
+// Adapted from tkey-device-signer for LUKS key derivation
+// Original: https://github.com/tillitis/tkey-device-signer
 
-#include <stdint.h>
-#include <string.h>
+#include <blake2s/blake2s.h>
+#include <monocypher/monocypher-ed25519.h>
+#include <stdbool.h>
+#include<string.h>
+#include <tkey/assert.h>
+#include <tkey/debug.h>
+#include <tkey/io.h>
+#include <tkey/led.h>
+#include <tkey/proto.h>
+#include <tkey/tk1_mem.h>
+#include <tkey/touch.h>
 
-/* TODO: Include TKey SDK headers when submodules are set up
-#include "tkey/app.h"
-#include "tkey/blake2s.h"
-*/
+#include "app_proto.h"
+#include "platform.h"
 
-#define CMD_GET_CHALLENGE   0x01
-#define CMD_SIGN_CHALLENGE  0x02
-#define CMD_GET_PUBKEY      0x03
+// clang-format off
+static volatile uint32_t *cdi           = (volatile uint32_t *) TK1_MMIO_TK1_CDI_FIRST;
+static volatile uint32_t *cpu_mon_ctrl  = (volatile uint32_t *) TK1_MMIO_TK1_CPU_MON_CTRL;
+static volatile uint32_t *cpu_mon_first = (volatile uint32_t *) TK1_MMIO_TK1_CPU_MON_FIRST;
+static volatile uint32_t *cpu_mon_last  = (volatile uint32_t *) TK1_MMIO_TK1_CPU_MON_LAST;
+static volatile uint32_t *app_addr      = (volatile uint32_t *) TK1_MMIO_TK1_APP_ADDR;
+static volatile uint32_t *app_size      = (volatile uint32_t *) TK1_MMIO_TK1_APP_SIZE;
+static volatile uint32_t *ver           = (volatile uint32_t *) TK1_MMIO_TK1_VERSION;
+// clang-format on
 
-#define CHALLENGE_SIZE 32
-#define SIGNATURE_SIZE 64
-#define PUBKEY_SIZE    32
+// Touch timeout in seconds
+#define TOUCH_TIMEOUT 30
+#define MAX_CHALLENGE_SIZE 256
 
-/* Application state */
-struct app_state {
-    uint8_t challenge[CHALLENGE_SIZE];
-    uint8_t signature[SIGNATURE_SIZE];
-    uint8_t initialized;
+const uint8_t app_name0[4] = "tk1 ";
+const uint8_t app_name1[4] = "luks";
+const uint32_t app_version = 0x00000001;
+
+enum state {
+	STATE_STARTED,
+	STATE_LOADING,
+	STATE_DERIVING,
+	STATE_FAILED,
 };
 
-static struct app_state state = {0};
+// Context for the loading of a challenge
+struct context {
+	uint8_t secret_key[64]; // Private key derived from CDI. Keep this
+				// BEFORE challenge buffer for security.
+	uint8_t pubkey[32];
+	uint8_t challenge[MAX_CHALLENGE_SIZE];
+	uint32_t left; // Bytes left to receive
+	uint32_t challenge_size;
+	uint16_t challenge_idx; // Where we are currently loading
+};
 
-/* Function prototypes */
-void handle_command(uint8_t cmd, const uint8_t *data, size_t len);
-void sign_challenge(const uint8_t *challenge, uint8_t *signature);
-void get_device_pubkey(uint8_t *pubkey);
+// Incoming packet from client
+struct packet {
+	struct frame_header hdr;      // Framing Protocol header
+	uint8_t cmd[CMDLEN_MAXBYTES]; // Application level protocol
+};
 
-/* Main application entry point */
-int main(void) {
-    /* TODO: Initialize TKey SDK
-     * - Set up communication with host
-     * - Initialize cryptographic functions
-     * - Get device USS  
-     */
-    
-    state.initialized = 1;
-    
-    /* Main command loop */
-    while (1) {
-        uint8_t cmd;
-        uint8_t buffer[128];
-        size_t len;
-        
-        /* TODO: Receive command from host
-         * cmd = receive_cmd(&buffer, &len);
-         */
-        
-        /* Handle command */
-        handle_command(cmd, buffer, len);
-    }
-    
-    return 0;
+static enum state started_commands(enum state state, struct context *ctx,
+				   struct packet pkt);
+static enum state loading_commands(enum state state, struct context *ctx,
+				   struct packet pkt);
+static enum state deriving_commands(enum state state, struct context *ctx,
+				    struct packet pkt);
+static int read_command(struct frame_header *hdr, uint8_t *cmd);
+static void wipe_context(struct context *ctx);
+
+static void wipe_context(struct context *ctx)
+{
+	crypto_wipe(ctx->challenge, MAX_CHALLENGE_SIZE);
+	ctx->left = 0;
+	ctx->challenge_size = 0;
+	ctx->challenge_idx = 0;
 }
 
-/* Handle incoming commands */
-void handle_command(uint8_t cmd, const uint8_t *data, size_t len) {
-    (void)len;  /* Unused for now */
-    
-    switch (cmd) {
-    case CMD_GET_CHALLENGE:
-        /* Host is sending a challenge to sign */
-        if (len == CHALLENGE_SIZE) {
-            memcpy(state.challenge, data, CHALLENGE_SIZE);
-            /* TODO: Send ACK */
-        }
-        break;
-        
-    case CMD_SIGN_CHALLENGE:
-        /* Host requests signature of challenge */
-        sign_challenge(state.challenge, state.signature);
-        /* TODO: Send signature back to host */
-        break;
-        
-    case CMD_GET_PUBKEY:
-        /* Host requests device public key (for verification) */
-        {
-            uint8_t pubkey[PUBKEY_SIZE];
-            get_device_pubkey(pubkey);
-            /* TODO: Send pubkey back to host */
-        }
-        break;
-        
-    default:
-        /* Unknown command */
-        /* TODO: Send error response */
-        break;
-    }
+// started_commands() allows only these commands:
+//
+// - CMD_FW_PROBE
+// - CMD_GET_NAMEVERSION
+// - CMD_GET_FIRMWARE_HASH
+// - CMD_GET_PUBKEY
+// - CMD_SET_CHALLENGE
+//
+// Anything else sent leads to state 'failed'.
+//
+// Arguments: the current state, the context and the incoming command.
+// Returns: The new state.
+static enum state started_commands(enum state state, struct context *ctx,
+				   struct packet pkt)
+{
+	uint8_t rsp[CMDLEN_MAXBYTES] = {0}; // Response
+	size_t rsp_left =
+	    CMDLEN_MAXBYTES; // How many bytes left in response buf
+
+	debug_puts("started_commands, command: ");
+	debug_putinthex(pkt.cmd[0]);
+	debug_lf();
+
+	// Smallest possible payload length (cmd) is 1 byte.
+	switch (pkt.cmd[0]) {
+	case CMD_FW_PROBE:
+		// Firmware probe. Allowed in this protocol state.
+		// State unchanged.
+		break;
+
+	case CMD_GET_NAMEVERSION:
+		debug_puts("CMD_GET_NAMEVERSION\n");
+		if (pkt.hdr.len != 1) {
+			// Bad length
+			state = STATE_FAILED;
+			break;
+		}
+
+		memcpy_s(rsp, rsp_left, app_name0, sizeof(app_name0));
+		rsp_left -= sizeof(app_name0);
+
+		memcpy_s(&rsp[4], rsp_left, app_name1, sizeof(app_name1));
+		rsp_left -= sizeof(app_name1);
+
+		memcpy_s(&rsp[8], rsp_left, &app_version, sizeof(app_version));
+
+		appreply(pkt.hdr, RSP_GET_NAMEVERSION, rsp);
+
+		// state unchanged
+		break;
+
+	case CMD_GET_FIRMWARE_HASH: {
+		uint32_t fw_len = 0;
+
+		debug_puts("CMD_GET_FIRMWARE_HASH\n");
+		if (pkt.hdr.len != 32) {
+			rsp[0] = STATUS_BAD;
+			appreply(pkt.hdr, RSP_GET_FIRMWARE_HASH, rsp);
+
+			state = STATE_FAILED;
+			break;
+		}
+
+		fw_len = pkt.cmd[1] + (pkt.cmd[2] << 8) + (pkt.cmd[3] << 16) +
+			 (pkt.cmd[4] << 24);
+
+		if (fw_len == 0 || fw_len > 8192) {
+			debug_puts("FW size must be > 0 and <= 8192\n");
+			rsp[0] = STATUS_BAD;
+			appreply(pkt.hdr, RSP_GET_FIRMWARE_HASH, rsp);
+
+			state = STATE_FAILED;
+			break;
+		}
+
+		rsp[0] = STATUS_OK;
+		crypto_sha512(&rsp[1], (void *)TK1_ROM_BASE, fw_len);
+		appreply(pkt.hdr, RSP_GET_FIRMWARE_HASH, rsp);
+
+		// state unchanged
+		break;
+	}
+
+	case CMD_GET_PUBKEY:
+		debug_puts("CMD_GET_PUBKEY\n");
+		if (pkt.hdr.len != 1) {
+			// Bad length
+			state = STATE_FAILED;
+			break;
+		}
+
+		memcpy_s(rsp, CMDLEN_MAXBYTES, ctx->pubkey,
+			 sizeof(ctx->pubkey));
+		appreply(pkt.hdr, RSP_GET_PUBKEY, rsp);
+		// state unchanged
+		break;
+
+	case CMD_SET_CHALLENGE: {
+		uint32_t local_challenge_size = 0;
+
+		debug_puts("CMD_SET_CHALLENGE\n");
+		// Bad length
+		if (pkt.hdr.len != 32) {
+			rsp[0] = STATUS_BAD;
+			appreply(pkt.hdr, RSP_SET_CHALLENGE, rsp);
+
+			state = STATE_FAILED;
+			break;
+		}
+
+		// cmd[1..4] contains the size.
+		local_challenge_size = pkt.cmd[1] + (pkt.cmd[2] << 8) +
+				       (pkt.cmd[3] << 16) + (pkt.cmd[4] << 24);
+
+		if (local_challenge_size == 0 ||
+		    local_challenge_size > MAX_CHALLENGE_SIZE) {
+			debug_puts("Challenge size not within range!\n");
+			rsp[0] = STATUS_BAD;
+			appreply(pkt.hdr, RSP_SET_CHALLENGE, rsp);
+
+			state = STATE_FAILED;
+			break;
+		}
+
+		// Set the real challenge size used later and reset
+		// where we load the data
+		ctx->challenge_size = local_challenge_size;
+		ctx->left = ctx->challenge_size;
+		ctx->challenge_idx = 0;
+
+		rsp[0] = STATUS_OK;
+		appreply(pkt.hdr, RSP_SET_CHALLENGE, rsp);
+
+		state = STATE_LOADING;
+		break;
+	}
+
+	default:
+		debug_puts("Got unknown initial command: 0x");
+		debug_puthex(pkt.cmd[0]);
+		debug_lf();
+
+		state = STATE_FAILED;
+		break;
+	}
+
+	return state;
 }
 
-/* Sign challenge using TKey USS */
-void sign_challenge(const uint8_t *challenge, uint8_t *signature) {
-    /* TODO: Implement signing using TKey USS
-     * 
-     * This should:
-     * 1. Get TKey Unique Device Secret (USS)
-     * 2. Combine USS with challenge
-     * 3. Generate signature using Ed25519 or similar
-     * 4. Return signature
-     * 
-     * Example pseudocode:
-     *   uss = get_device_uss();
-     *   signature = ed25519_sign(uss, challenge);
-     * 
-     * For now, just copy challenge as placeholder
-     */
-    memcpy(signature, challenge, CHALLENGE_SIZE);
-    memset(signature + CHALLENGE_SIZE, 0, SIGNATURE_SIZE - CHALLENGE_SIZE);
+// loading_commands() allows only these commands:
+//
+// - CMD_LOAD_CHALLENGE
+//
+// Anything else sent leads to state 'failed'.
+//
+// Arguments: the current state, the context and the incoming command.
+// Returns: The new state.
+static enum state loading_commands(enum state state, struct context *ctx,
+				   struct packet pkt)
+{
+	uint8_t rsp[CMDLEN_MAXBYTES] = {0}; // Response
+	int nbytes = 0;			    // Bytes to write to memory
+
+	switch (pkt.cmd[0]) {
+	case CMD_LOAD_CHALLENGE: {
+		debug_puts("CMD_LOAD_CHALLENGE\n");
+
+		// Bad length
+		if (pkt.hdr.len != CMDLEN_MAXBYTES) {
+			rsp[0] = STATUS_BAD;
+			appreply(pkt.hdr, RSP_LOAD_CHALLENGE, rsp);
+
+			state = STATE_FAILED;
+			break;
+		}
+
+		if (ctx->left > CMDLEN_MAXBYTES - 1) {
+			nbytes = CMDLEN_MAXBYTES - 1;
+		} else {
+			nbytes = ctx->left;
+		}
+
+		memcpy_s(&ctx->challenge[ctx->challenge_idx],
+			 MAX_CHALLENGE_SIZE - ctx->challenge_idx, pkt.cmd + 1,
+			 nbytes);
+
+		ctx->challenge_idx += nbytes;
+		ctx->left -= nbytes;
+
+		rsp[0] = STATUS_OK;
+		appreply(pkt.hdr, RSP_LOAD_CHALLENGE, rsp);
+
+		if (ctx->left == 0) {
+
+			state = STATE_DERIVING;
+			break;
+		}
+
+		// state unchanged
+		break;
+	}
+
+	default:
+		debug_puts("Got unknown loading command: 0x");
+		debug_puthex(pkt.cmd[0]);
+		debug_lf();
+
+		state = STATE_FAILED;
+		break;
+	}
+
+	return state;
 }
 
-/* Get device public key */
-void get_device_pubkey(uint8_t *pubkey) {
-    /* TODO: Implement public key retrieval
-     * 
-     * This should:
-     * 1. Derive public key from USS
-     * 2. Return public key for verification
-     * 
-     * Example pseudocode:
-     *   uss = get_device_uss();
-     *   pubkey = ed25519_public_key(uss);
-     */
-    memset(pubkey, 0, PUBKEY_SIZE);
+// deriving_commands() allows only these commands:
+//
+// - CMD_DERIVE_KEY
+//
+// Anything else sent leads to state 'failed'.
+//
+// Arguments: the current state, the context, the incoming command
+// packet.
+//
+// Returns: The new state.
+static enum state deriving_commands(enum state state, struct context *ctx,
+				    struct packet pkt)
+{
+	uint8_t rsp[CMDLEN_MAXBYTES] = {0}; // Response
+	uint8_t derived_key[64] = {0};
+	bool touched = false;
+
+	switch (pkt.cmd[0]) {
+	case CMD_DERIVE_KEY:
+		debug_puts("CMD_DERIVE_KEY\n");
+		if (pkt.hdr.len != 1) {
+			// Bad length
+			state = STATE_FAILED;
+			break;
+		}
+
+#ifndef TKEY_LUKS_APP_NO_TOUCH
+		touched = touch_wait(LED_GREEN, TOUCH_TIMEOUT);
+
+		if (!touched) {
+			rsp[0] = STATUS_BAD;
+			appreply(pkt.hdr, RSP_DERIVE_KEY, rsp);
+
+			state = STATE_STARTED;
+			break;
+		}
+#endif
+		debug_puts("Touched, now deriving key\n");
+
+		// All loaded, device touched, let's derive the LUKS key
+		// Use BLAKE2b as key derivation function:
+		// - Input: challenge from initramfs
+		// - Key: secret_key (derived from CDI+USS)
+		// - Output: 64-byte key for LUKS
+		blake2s(derived_key, sizeof(derived_key), ctx->secret_key,
+			sizeof(ctx->secret_key), ctx->challenge,
+			ctx->challenge_size);
+
+		debug_puts("Sending derived key!\n");
+		memcpy_s(rsp + 1, CMDLEN_MAXBYTES, derived_key,
+			 sizeof(derived_key));
+		appreply(pkt.hdr, RSP_DERIVE_KEY, rsp);
+
+		// Forget derived key and most of context
+		crypto_wipe(derived_key, sizeof(derived_key));
+		wipe_context(ctx);
+
+		state = STATE_STARTED;
+		break;
+
+	default:
+		debug_puts("Got unknown deriving command: 0x");
+		debug_puthex(pkt.cmd[0]);
+		debug_lf();
+
+		state = STATE_FAILED;
+		break;
+	}
+
+	return state;
 }
 
-/* Notes for implementation:
- * 
- * The device app should:
- * - Use TKey SDK for hardware access
- * - Leverage USS (Unique Device Secret) for signing
- * - Implement proper cryptographic operations (Ed25519)
- * - Be as small as possible (TKey has limited memory)
- * - Handle errors gracefully
- * 
- * Alternative approach:
- * - Use tkey-sign as base and modify for LUKS use case
- * - This might be simpler than building from scratch
- * 
- * Security considerations:
- * - USS never leaves the device
- * - Signatures are deterministic (same challenge = same signature)
- * - Could add counter/nonce to prevent replay attacks
- */
+// read_command takes a frame header and a command to fill in after
+// parsing. It returns 0 on success.
+static int read_command(struct frame_header *hdr, uint8_t *cmd)
+{
+	uint8_t in = 0;
+	uint8_t available = 0;
+	enum ioend endpoint = IO_NONE;
+
+	memset(hdr, 0, sizeof(struct frame_header));
+	memset(cmd, 0, CMDLEN_MAXBYTES);
+
+	if (*ver >= CASTORVERSION) {
+		if (readselect(IO_CDC, &endpoint, &available) < 0) {
+			debug_puts("readselect error");
+			return -1;
+		}
+
+		if (read(IO_CDC, &in, 1, 1) < 0) {
+			return -1;
+		}
+	} else {
+		if (uart_read(&in, 1, 1) < 0) {
+			return -1;
+		}
+	}
+
+	if (parseframe(in, hdr) == -1) {
+		debug_puts("Couldn't parse header\n");
+		return -1;
+	}
+
+	if (*ver >= CASTORVERSION) {
+		for (uint8_t n = 0; n < hdr->len;) {
+			if (readselect(IO_CDC, &endpoint, &available) < 0) {
+				debug_puts("readselect error");
+				return -1;
+			}
+
+			// Read as much as is available of what we expect from
+			// the frame.
+			available = available > hdr->len ? hdr->len : available;
+
+			debug_puts("reading ");
+			debug_putinthex(available);
+			debug_lf();
+
+			int nbytes = read(IO_CDC, &cmd[n], CMDLEN_MAXBYTES - n,
+					  available);
+			if (nbytes < 0) {
+				debug_puts("read: buffer overrun\n");
+
+				return -1;
+			}
+
+			n += nbytes;
+		}
+	} else {
+		if (uart_read(cmd, CMDLEN_MAXBYTES, hdr->len) < 0) {
+			return -1;
+		}
+	}
+
+	// Well-behaved apps are supposed to check for a client
+	// attempting to probe for firmware. In that case destination
+	// is firmware and we just reply NOK, discarding all bytes
+	// already read.
+	if (hdr->endpoint == DST_FW) {
+		appreply_nok(*hdr);
+		debug_puts("Responded NOK to message meant for fw\n");
+		cmd[0] = CMD_FW_PROBE;
+
+		return 0;
+	}
+
+	// Is it for us? If not, return error after having discarded
+	// all bytes.
+	if (hdr->endpoint != DST_SW) {
+		debug_puts("Message not meant for app. endpoint was 0x");
+		debug_puthex(hdr->endpoint);
+		debug_lf();
+
+		return -1;
+	}
+
+	return 0;
+}
+
+int main(void)
+{
+	struct context ctx = {0};
+	enum state state = STATE_STARTED;
+	struct packet pkt = {0};
+
+	// Use Execution Monitor on RAM after app
+	*cpu_mon_first = *app_addr + *app_size;
+	*cpu_mon_last = TK1_RAM_BASE + TK1_RAM_SIZE;
+	*cpu_mon_ctrl = 1;
+
+	led_set(LED_BLUE);
+
+#ifdef TKEY_DEBUG
+	config_endpoints(IO_CDC | IO_DEBUG);
+#endif
+
+	// Generate a public key from CDI (for identification)
+	// This also initializes secret_key from CDI+USS
+	crypto_ed25519_key_pair(ctx.secret_key, ctx.pubkey, (uint8_t *)cdi);
+
+	for (;;) {
+		debug_puts("parser state: ");
+		debug_putinthex(state);
+		debug_lf();
+
+		if (read_command(&pkt.hdr, pkt.cmd) != 0) {
+			debug_puts("read_command returned != 0!\n");
+			state = STATE_FAILED;
+		}
+
+		switch (state) {
+		case STATE_STARTED:
+			state = started_commands(state, &ctx, pkt);
+			break;
+
+		case STATE_LOADING:
+			state = loading_commands(state, &ctx, pkt);
+			break;
+
+		case STATE_DERIVING:
+			state = deriving_commands(state, &ctx, pkt);
+			break;
+
+		case STATE_FAILED:
+			// fallthrough
+
+		default:
+			debug_puts("parser state 0x");
+			debug_puthex(state);
+			debug_lf();
+			assert(1 == 2);
+			break; // Not reached
+		}
+	}
+}
