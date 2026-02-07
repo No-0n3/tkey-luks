@@ -4,16 +4,22 @@
 # The output is a binary that gets loaded onto the TKey
 
 # Compiler for TKey (RISC-V 32-bit)
-CC = riscv32-unknown-elf-gcc
-OBJCOPY = riscv32-unknown-elf-objcopy
+# Using LLVM/Clang to match official Tillitis build system
+CC = clang
+OBJCOPY = llvm-objcopy
 
-# Flags for TKey target
-CFLAGS = -march=rv32iczmmul -mabi=ilp32 -Os -Wall -Wextra
-CFLAGS += -ffreestanding -nostdlib -fno-builtin
+# Flags for TKey target (matching tkey-libs build)
+CFLAGS = -target riscv32-unknown-none-elf
+CFLAGS += -march=rv32iczmmul -mabi=ilp32 -mcmodel=medany
+CFLAGS += -static -std=gnu99 -O2 -ffast-math
+CFLAGS += -fno-common -fno-builtin-printf -fno-builtin-putchar
+CFLAGS += -nostdlib -mno-relax -flto
+CFLAGS += -Wall -Werror=implicit-function-declaration
 
 # Linker flags
 LDFLAGS = -T ../submodules/tkey-libs/app.ld
-LDFLAGS += -nostdlib -nostartfiles
+LDFLAGS += -nostdlib -mno-relax
+LDFLAGS += -fuse-ld=lld-20
 
 # Target binary
 TARGET = tkey-luks-device
@@ -35,20 +41,27 @@ INCLUDES = -I../submodules/tkey-libs/include
 # Default target
 all: check-toolchain $(BIN)
 
-# Check if RISC-V toolchain is available
+# Check if LLVM/Clang toolchain is available
 check-toolchain:
 	@which $(CC) > /dev/null 2>&1 || { \
-		echo "ERROR: RISC-V toolchain not found"; \
+		echo "ERROR: Clang not found"; \
 		echo ""; \
-		echo "The TKey device app requires RISC-V GCC toolchain."; \
+		echo "The TKey device app requires LLVM/Clang 15+ with RISC-V support."; \
 		echo ""; \
 		echo "Install options:"; \
-		echo "  Ubuntu/Debian: apt-get install gcc-riscv64-unknown-elf"; \
-		echo "  Fedora: dnf install riscv64-elf-gcc"; \
-		echo "  Manual: https://github.com/riscv-collab/riscv-gnu-toolchain"; \
+		echo "  Ubuntu/Debian: apt-get install clang lld llvm"; \
+		echo "  Fedora: dnf install clang lld llvm"; \
+		echo "  Arch: pacman -S clang lld llvm"; \
 		echo ""; \
-		echo "Alternative: Use existing tkey-sign app instead"; \
-		echo "  See: https://github.com/tillitis/tkey-sign"; \
+		echo "Verify RISC-V support: clang --print-targets | grep riscv"; \
+		echo ""; \
+		echo "Alternative: Use existing tkey-device-signer app"; \
+		echo "  See: https://github.com/tillitis/tkey-device-signer"; \
+		exit 1; \
+	}
+	@which lld-20 > /dev/null 2>&1 || which lld > /dev/null 2>&1 || { \
+		echo "ERROR: LLD linker not found"; \
+		echo "Install: apt-get install lld or lld-20"; \
 		exit 1; \
 	}
 
