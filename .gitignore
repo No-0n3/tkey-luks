@@ -18,6 +18,9 @@
 go.sum
 vendor/
 
+# Node.js
+node_modules/
+
 # Python
 __pycache__/
 *.py[cod]
