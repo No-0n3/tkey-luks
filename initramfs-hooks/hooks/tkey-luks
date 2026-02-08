@@ -59,20 +59,4 @@ fi
 # CDC-ACM module for TKey USB-serial communication
 manual_add_modules cdc-acm
 
-# CRITICAL: Ensure our script runs BEFORE cryptroot
-# The ORDER file determines execution sequence, and cryptroot must run AFTER us
-# We need to surgically move our script entry to run before cryptroot
-ORDER_FILE="${DESTDIR}/scripts/local-top/ORDER"
-if [ -f "$ORDER_FILE" ]; then
-    # Remove any existing 00-tkey-luks / tkey-luks entries
-    sed -i '/00-tkey-luks\|tkey-luks/d' "$ORDER_FILE"
-    
-    # Insert our script entry RIGHT BEFORE the first cryptroot line
-    sed -i '/^\/scripts\/local-top\/cryptroot/i /scripts/local-top/00-tkey-luks "$@"\n[ -e /conf/param.conf ] \&\& . /conf/param.conf' "$ORDER_FILE"
-    
-    echo "  ✓ Adjusted script execution order (00-tkey-luks runs before cryptroot)"
-else
-    echo "  ⚠ Warning: ORDER file not found at $ORDER_FILE"
-fi
-
 echo "TKey-LUKS: Installation complete"
