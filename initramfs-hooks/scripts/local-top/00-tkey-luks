@@ -212,25 +212,31 @@ tkey_luks_unlock() {
     fi
     
     # Find LUKS devices that need unlocking
-    # Read from /conf/conf.d/cryptroot (generated from /etc/crypttab)
+    # Read from /cryptroot/crypttab (generated from /etc/crypttab with initramfs option)
     local luks_device=""
     local mapper_name=""
     
     debug_log "Looking for LUKS devices to unlock..."
     
-    # Parse cryptroot configuration (crypttab format)
+    # The crypttab is copied to /cryptroot/crypttab in initramfs
     # Format: target source keyfile options
-    if [ -f /conf/conf.d/cryptroot ]; then
-        debug_log "Reading /conf/conf.d/cryptroot"
+    if [ -f /cryptroot/crypttab ]; then
+        debug_log "Reading /cryptroot/crypttab"
         while read target source keyfile options; do
             # Skip comments and empty lines
             case "$target" in
                 ""|\#*) continue ;;
             esac
             
-            debug_log "Found crypttab entry: $target $source"
+            debug_log "Found crypttab entry: $target $source $keyfile $options"
             
-            # Use the first LUKS entry we find
+            # Check if initramfs option is present
+            if ! echo "$options" | grep -q "initramfs"; then
+                debug_log "Skipping $target - no initramfs option"
+                continue
+            fi
+            
+            # Use the first LUKS entry with initramfs option
             mapper_name="$target"
             
             # Source can be UUID=... or /dev/...
@@ -243,7 +249,9 @@ tkey_luks_unlock() {
             fi
             
             break  # Only handle first device for now
-        done < /conf/conf.d/cryptroot
+        done < /cryptroot/crypttab
+    else
+        debug_log "/cryptroot/crypttab not found"
     fi
     
     # Fallback: try to find from /proc/cmdline
