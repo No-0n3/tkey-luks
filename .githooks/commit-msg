@@ -1,0 +1,23 @@
+#!/usr/bin/env sh
+# commitlint commit-msg hook
+# This hook validates commit messages against conventional commits format
+
+# Get the commit message file
+COMMIT_MSG_FILE=$1
+
+# Check if commitlint is available
+if ! command -v npx >/dev/null 2>&1; then
+    echo "Warning: npx not found. Skipping commit message validation."
+    echo "Install Node.js and run 'npm install' to enable validation."
+    exit 0
+fi
+
+# Check if commitlint is installed
+if [ ! -d "node_modules/@commitlint/cli" ]; then
+    echo "Warning: commitlint not installed. Skipping validation."
+    echo "Run 'npm install' to enable commit message validation."
+    exit 0
+fi
+
+# Run commitlint on the commit message
+npx commitlint --edit "$COMMIT_MSG_FILE"

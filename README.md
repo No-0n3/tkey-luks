@@ -187,12 +187,32 @@ All commits must follow the [Conventional Commits](https://www.conventionalcommi
 
 ### Validation
 
-Commits are automatically validated using [commitlint](https://commitlint.js.org/) in CI. To check your commits locally:
+Commits are automatically validated using [commitlint](https://commitlint.js.org/) in CI. 
+
+#### Automatic Local Validation (Recommended)
+
+When you run `npm install`, git hooks are automatically installed that validate commit messages before they're committed:
 
 ```bash
-# Install dependencies
+# Install dependencies (also installs git hooks)
 npm install
+```
 
+The commit-msg hook will validate your message and reject commits that don't follow the conventional commits format.
+
+#### Manual Hook Installation
+
+If you need to reinstall the hooks:
+
+```bash
+./install-hooks.sh
+```
+
+#### Manual Validation
+
+To check commits manually without the hook:
+
+```bash
 # Check last commit
 npx commitlint --last
 
