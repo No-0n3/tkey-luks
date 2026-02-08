@@ -78,6 +78,23 @@ sudo apt-get install clang lld llvm
 
 - `tkey-luks-device.bin` (48 KB) - Raw binary for TKey
 - `tkey-luks-device.elf` - ELF executable with debug symbols
+- `tkey-luks-device.bin.sha512` - SHA-512 hash for integrity verification
+
+### Binary Integrity Verification
+
+The build process generates a SHA-512 hash of the device app binary for integrity verification:
+
+```bash
+# Verify binary integrity after building
+make verify
+
+# Or manually:
+sha512sum -c tkey-luks-device.bin.sha512
+```
+
+The hash file is automatically generated during build but is **not** committed to git - it's generated locally to verify your build matches expectations.
+
+**Security Note:** Always verify the binary integrity before loading onto your TKey, especially if obtained from untrusted sources. The hash ensures the binary hasn't been tampered with.
 
 ## Development Approach
 

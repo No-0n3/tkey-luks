@@ -1,97 +1,75 @@
 # TKey-LUKS Client Makefile
-#
-# NOTE: Go is the recommended language for TKey client applications.
-# This C implementation is provided as an alternative.
-# For Go implementation, see: go.mod and main.go (TODO)
+# Go implementation - uses build.sh for full build with dependency management
 
-CC = gcc
-CFLAGS = -Wall -Wextra -O2 -std=c11
-LDFLAGS = 
-TARGET = tkey-luks-unlock
+# Go build settings
+GOCMD = go
+GOBUILD = $(GOCMD) build
+GOCLEAN = $(GOCMD) clean
+GOTEST = $(GOCMD) test
+GOMOD = $(GOCMD) mod
 
-# For static linking (required for initramfs)
-STATIC = -static
+# Binary names
+BINARY = tkey-luks-client
+HASH = $(BINARY).sha512
 
-# Source files
-SRCS = src/main.c
-OBJS = $(SRCS:.c=.o)
+# Build flags for static linking and reduced size
+LDFLAGS = -ldflags="-s -w"
 
-# Include paths (update when tkey-libs submodule is added)
-INCLUDES = -I../submodules/tkey-libs/include
+# Default target - build binary and generate hash
+all: $(BINARY) $(HASH)
 
-# Libraries (update when dependencies are clear)
-LIBS = -lusb-1.0 -lcryptsetup
-
-# Default target
-all: $(TARGET)
-
-# Build statically linked binary
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) $(STATIC) -o $@ $^ $(LIBS)
+# Build the Go binary
+$(BINARY): main.go go.mod
+	$(GOBUILD) $(LDFLAGS) -o $(BINARY)
 	@echo ""
-	@echo "Built: $(TARGET)"
-	@ls -lh $(TARGET)
-	@echo ""
-	@echo "Checking binary:"
-	@file $(TARGET)
-	@echo ""
-	@echo "Dependencies:"
-	@ldd $(TARGET) 2>&1 || echo "✓ Statically linked"
+	@echo "Built: $(BINARY)"
+	@ls -lh $(BINARY)
 
-# Compile source files
-%.o: %.c
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+# Generate SHA-512 hash
+$(HASH): $(BINARY)
+	@echo "Generating SHA-512 hash..."
+	@sha512sum $(BINARY) > $(HASH)
+	@echo "Hash file: $(HASH)"
+
+# Verify binary integrity against hash
+verify: $(HASH)
+	@echo "Verifying $(BINARY) integrity..."
+	@sha512sum -c $(HASH) && echo "✓ Binary verified" || (echo "✗ Verification failed" && exit 1)
 
 # Clean build artifacts
 clean:
-	rm -f $(OBJS) $(TARGET)
+	$(GOCLEAN)
+	rm -f $(BINARY) $(HASH)
 	@echo "Cleaned build artifacts"
 
-# Install to system (requires root)
-install: $(TARGET)
-	install -D -m 755 $(TARGET) /usr/lib/tkey-luks/$(TARGET)
-	@echo "Installed to /usr/lib/tkey-luks/$(TARGET)"
+# Download and verify dependencies
+deps:
+	$(GOMOD) download
+	$(GOMOD) verify
+	@echo "✓ Dependencies downloaded and verified"
 
-# Development build (with debug symbols)
-debug: CFLAGS += -g -DDEBUG
-debug: clean $(TARGET)
+# Run tests
+test:
+	$(GOTEST) -v ./...
 
-# Test target
-test: $(TARGET)
-	@echo "Running basic tests..."
-	./$(TARGET) --help
-	@echo "✓ Help output works"
+# Install to system (requires selecting appropriate location)
+install: $(BINARY)
+	install -D -m 755 $(BINARY) /usr/local/bin/$(BINARY)
+	@echo "Installed to /usr/local/bin/$(BINARY)"
 
-# Show configuration
+# Development build (with debug info)
+debug: LDFLAGS = -ldflags="-w"
+debug: clean all
+
+# Show build configuration
 config:
 	@echo "Build configuration:"
-	@echo "  CC: $(CC)"
-	@echo "  CFLAGS: $(CFLAGS)"
+	@echo "  Go: $(shell go version)"
+	@echo "  GOCMD: $(GOCMD)"
 	@echo "  LDFLAGS: $(LDFLAGS)"
-	@echo "  INCLUDES: $(INCLUDES)"
-	@echo "  LIBS: $(LIBS)"
-	@echo "  TARGET: $(TARGET)"
+	@echo "  Binary: $(BINARY)"
+	@echo ""
+	@echo "Dependencies:"
+	@$(GOMOD) graph | head -20
 
-.PHONY: all clean install debug test config
-
-# Notes for future development:
-# 
-# RECOMMENDED: Consider implementing in Go (standard for TKey clients)
-#   - Better TKey library support
-#   - Easier static compilation
-#   - Standard in Tillitis ecosystem
-#
-# TODO: Add actual TKey library dependencies
-# TODO: Add cryptsetup library integration  
-# TODO: Implement static linking with musl-libc for smaller binary
-# TODO: Add tests for each component
-# TODO: Add cross-compilation support
-#
-# For Go implementation:
-#   go build -ldflags="-s -w" -o tkey-luks-unlock
-#
-# For musl-libc static build:
-#   CC=musl-gcc make
-#
-# For minimal size:
-#   CFLAGS="-Os -s" make
+.PHONY: all verify clean deps test install debug config

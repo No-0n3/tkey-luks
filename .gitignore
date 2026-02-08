@@ -4,10 +4,16 @@
 *.so
 *.bin
 *.elf
+*.sha512
 /build/
 /dist/
 /target/
 /out/
+
+# Project binaries
+/client/tkey-luks-client
+/device-app/tkey-luks-device.bin
+/device-app/tkey-luks-device.elf
 
 # Go
 go.sum

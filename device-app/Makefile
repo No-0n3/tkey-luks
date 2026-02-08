@@ -102,6 +102,15 @@ $(BIN): $(ELF)
 	@ls -lh $(BIN)
 	@echo ""
 	@echo "Device app ready for TKey"
+	@echo ""
+	@echo "Generating SHA-512 hash..."
+	@sha512sum $(BIN) > $(BIN).sha512
+	@echo "Hash file: $(BIN).sha512"
+
+# Verify binary integrity against hash
+verify: $(BIN).sha512
+	@echo "Verifying $(BIN) integrity..."
+	@sha512sum -c $(BIN).sha512 && echo "✓ Binary verified" || (echo "✗ Verification failed" && exit 1)
 
 # Compile C sources
 %.o: %.c
@@ -135,26 +144,7 @@ config:
 	@echo "  CFLAGS: $(CFLAGS)"
 	@echo "  LDFLAGS: $(LDFLAGS)"
 	@echo "  tkey-libs: $(LIBDIR) ($(TKEY_LIBS_VERSION))"
-
-.PHONY: all check-toolchain check-libs build-libs clean clean-all install config
 	@echo "  TARGET: $(TARGET)"
 	@echo "  Output: $(BIN)"
 
-.PHONY: all clean install config check-toolchain
-
-# Development notes:
-#
-# TODO: Set up proper TKey SDK integration
-# TODO: Add actual cryptographic operations
-# TODO: Test on real TKey hardware
-# TODO: Optimize for size (TKey has limited flash)
-#
-# Alternative approach:
-# Instead of building custom device app, consider using tkey-sign:
-#   1. Clone tkey-sign as submodule
-#   2. Build tkey-sign  
-#   3. Use its signing capabilities for key derivation
-#   4. This might be simpler and more secure
-#
-# To test on TKey hardware:
-#   tkey-runapp $(BIN)
+.PHONY: all check-toolchain check-libs build-libs clean clean-all install config verify
