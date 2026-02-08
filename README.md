@@ -1,5 +1,7 @@
 # TKey-LUKS: Hardware-Based LUKS Unlock with Tillitis TKey
 
+[![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-%23FE5196?logo=conventionalcommits&logoColor=white)](https://conventionalcommits.org)
+
 Unlock LUKS encrypted root partitions at boot using Tillitis TKey hardware security key.
 
 ## Overview
@@ -14,6 +16,7 @@ This project provides a secure mechanism to unlock LUKS encrypted root partition
 - 🧪 **Test Environment**: QEMU-based testing infrastructure
 - 📦 **Easy Installation**: Automated installation scripts
 - 🔄 **Fallback Support**: Optional password fallback
+- ✅ **Conventional Commits**: Strict commit standards enforced via CI and git hooks
 
 ## Project Status
 
@@ -44,6 +47,9 @@ See [PLAN.md](PLAN.md) for detailed implementation plan and [STATUS.md](STATUS.m
 # Clone repository with submodules
 git clone --recursive https://github.com/No-0n3/tkey-luks.git
 cd tkey-luks
+
+# Install Node.js dependencies and git hooks (for contributors)
+npm install
 
 # Build all components
 ./scripts/build-all.sh
@@ -164,11 +170,11 @@ The TKey-LUKS unlock happens early in boot:
 
 ## Contributing
 
-Contributions welcome! This project follows conventional commits for clear and semantic commit messages.
+Contributions welcome! This project strictly follows [Conventional Commits](https://www.conventionalcommits.org/) to maintain clear and semantic commit history.
 
-### Commit Message Format
+### 📋 Commit Message Format
 
-All commits must follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
+All commits **must** follow this specification:
 
 ```
 <type>(<scope>): <description>
@@ -178,49 +184,74 @@ All commits must follow the [Conventional Commits](https://www.conventionalcommi
 [optional footer(s)]
 ```
 
-**Types**: `feat`, `fix`, `docs`, `build`, `test`, `refactor`, `chore`, `ci`, `perf`
+**Standard Types**:
+- `feat`: A new feature for users
+- `fix`: A bug fix for users
+- `docs`: Documentation changes only
+- `style`: Code style changes (formatting, semicolons, etc.)
+- `refactor`: Code change that neither fixes a bug nor adds a feature
+- `perf`: Performance improvements
+- `test`: Adding or updating tests
+- `build`: Changes to build system or dependencies
+- `ci`: Changes to CI configuration
+- `chore`: Other changes that don't modify src or test files
 
 **Examples**:
-- `feat(client): add support for custom challenge prompts`
-- `fix(initramfs): resolve device detection timeout`
-- `docs: update installation instructions for Fedora`
+```
+feat(client): add timeout configuration for TKey detection
+fix(initramfs): resolve race condition in device detection
+docs: update Ubuntu 24.04 installation guide
+build: upgrade commitlint to v20.4.1
+test: add integration tests for challenge validation
+```
 
-### Validation
+### 🔒 Commit Validation
 
-Commits are automatically validated using [commitlint](https://commitlint.js.org/) in CI. 
+Commits are validated **locally** with git hooks and in **CI** with GitHub Actions.
 
-#### Automatic Local Validation (Recommended)
+#### ✨ Automatic Local Validation (Recommended)
 
-When you run `npm install`, git hooks are automatically installed that validate commit messages before they're committed:
+Run `npm install` to automatically set up git hooks:
 
 ```bash
-# Install dependencies (also installs git hooks)
+# Install dependencies and git hooks
 npm install
 ```
 
-The commit-msg hook will validate your message and reject commits that don't follow the conventional commits format.
+**What happens:** The commit-msg hook validates your message before the commit is created.
+- ✅ Valid messages: commit proceeds normally
+- ❌ Invalid messages: commit is rejected with helpful error messages
 
-#### Manual Hook Installation
+#### 🔧 Manual Hook Installation
 
-If you need to reinstall the hooks:
+Reinstall hooks manually if needed:
 
 ```bash
 ./install-hooks.sh
 ```
 
-#### Manual Validation
+#### 🧪 Manual Validation
 
-To check commits manually without the hook:
+Check commits without hooks:
 
 ```bash
-# Check last commit
+# Validate last commit
 npx commitlint --last
 
-# Check commit message from stdin
+# Validate a message
 echo "feat: add new feature" | npx commitlint
+
+# Validate last 5 commits
+npx commitlint --from HEAD~5
 ```
 
-All pull requests require passing commit message validation before merge.
+#### 🚀 CI/CD Validation
+
+GitHub Actions automatically validates:
+- **Push events**: Last commit message
+- **Pull requests**: All commits in the PR
+
+**Result**: PRs with invalid commits will fail CI checks and cannot be merged.
 This system provides security against:
 - Unauthorized boot of stolen devices
 - Cold boot attacks (limited)
