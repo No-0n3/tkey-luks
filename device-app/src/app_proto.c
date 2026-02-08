@@ -3,40 +3,22 @@
 //
 // Adapted from tkey-device-signer for LUKS key derivation
 
-#include <tkey/debug.h>
-#include <tkey/tk1_mem.h>
+#include <tkey/qemu_debug.h>
 
 #include "app_proto.h"
-#include "platform.h"
-
-// clang-format off
-static volatile uint32_t *ver = (volatile uint32_t *) TK1_MMIO_TK1_VERSION;
-// clang-format on
 
 // Send reply frame with response status Not OK (NOK==1), shortest length
 void appreply_nok(struct frame_header hdr)
 {
-	uint8_t buf[2];
-	enum ioend dst = IO_CDC;
-
-	buf[0] = genhdr(hdr.id, hdr.endpoint, 0x1, LEN_1);
-	buf[1] = 0; // Not used, but smallest payload is 1 byte
-
-	if (*ver < CASTORVERSION) {
-		dst = IO_UART;
-	}
-
-	write(dst, buf, 2);
+	writebyte(genhdr(hdr.id, hdr.endpoint, 0x1, LEN_1));
+	writebyte(0);
 }
 
 // Send app reply with frame header, response code, and LEN_X-1 bytes from buf
 void appreply(struct frame_header hdr, enum appcmd rspcode, void *buf)
 {
-	size_t nbytes = 0; // Number of bytes in a reply frame
-			   // (including rspcode).
+	size_t nbytes = 0;
 	enum cmdlen len = LEN_1;
-	uint8_t frame[1 + 128];	 // Frame header + longest response
-	enum ioend dst = IO_CDC; // I/O destination.
 
 	switch (rspcode) {
 	case RSP_GET_PUBKEY:
@@ -70,19 +52,19 @@ void appreply(struct frame_header hdr, enum appcmd rspcode, void *buf)
 		break;
 
 	default:
-		debug_puts("appreply: Unknown response code: 0x");
-		debug_puthex(rspcode);
-		debug_lf();
+		qemu_puts("appreply(): Unknown response code: ");
+		qemu_puthex(rspcode);
+		qemu_lf();
 
 		return;
 	}
 
-	if (*ver < CASTORVERSION) {
-		dst = IO_UART;
-	}
+	// Frame Protocol Header
+	writebyte(genhdr(hdr.id, hdr.endpoint, 0x0, len));
 
-	frame[0] = genhdr(hdr.id, hdr.endpoint, 0x0, len);
-	memcpy_s(&frame[1], 128, buf, nbytes);
+	// app protocol header is 1 byte response code
+	writebyte(rspcode);
+	nbytes--;
 
-	write(dst, frame, nbytes + 1);
+	write(buf, nbytes);
 }

@@ -2,7 +2,7 @@
 
 This is the device application that runs on the TKey hardware (RISC-V).
 
-**Base Implementation:** We're using [tkey-device-signer](../submodules/tkey-device-signer) as the foundation and adapting it for LUKS key derivation.
+**Base Implementation:** Adapted from [tkey-device-signer v1.0.2](https://github.com/tillitis/tkey-device-signer) for LUKS key derivation.
 
 ## Architecture
 
@@ -31,14 +31,53 @@ The device app will:
 
 ## Building
 
-```bash
-# From device-app/
-make
+### Quick Build
 
-# Or use the official Tillitis builder container:
-cd ../submodules/tkey-device-signer
-make podman
+```bash
+# Recommended: Use the build script (handles tkey-libs automatically)
+./build.sh
 ```
+
+### Manual Build
+
+```bash
+# Ensure submodules are initialized
+cd ..
+git submodule update --init
+
+# Build tkey-libs (required dependency)
+make -C submodules/tkey-libs
+
+# Build device app
+cd device-app
+make
+```
+
+### Build Targets
+
+```bash
+make              # Build device app (checks dependencies)
+make config       # Show build configuration
+make clean        # Clean device app artifacts
+make clean-all    # Clean device app and tkey-libs
+make install      # Install to /usr/lib/tkey-luks/
+```
+
+### Requirements
+
+- **Clang/LLVM 15+** with RISC-V support
+- **LLD linker** (lld or lld-20)
+- **tkey-libs v0.1.2** (handled by build.sh/Makefile)
+
+Install on Ubuntu/Debian:
+```bash
+sudo apt-get install clang lld llvm
+```
+
+### Output
+
+- `tkey-luks-device.bin` (48 KB) - Raw binary for TKey
+- `tkey-luks-device.elf` - ELF executable with debug symbols
 
 ## Development Approach
 

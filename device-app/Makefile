@@ -15,6 +15,8 @@ CFLAGS += -static -std=gnu99 -O2 -ffast-math
 CFLAGS += -fno-common -fno-builtin-printf -fno-builtin-putchar
 CFLAGS += -nostdlib -mno-relax -flto
 CFLAGS += -Wall -Werror=implicit-function-declaration
+# Disable QEMU debug output for real TKey hardware
+# CFLAGS += -DQEMU_DEBUG
 
 # Library paths
 LIBDIR = ../submodules/tkey-libs
@@ -31,6 +33,9 @@ TARGET = tkey-luks-device
 ELF = $(TARGET).elf
 BIN = $(TARGET).bin
 
+# Required tkey-libs version
+TKEY_LIBS_VERSION = v0.1.2
+
 # Source files
 SRCS = src/main.c src/app_proto.c
 
@@ -40,7 +45,7 @@ OBJS = $(SRCS:.c=.o)
 INCLUDES = -I$(LIBDIR)/include -I$(LIBDIR)
 
 # Default target
-all: check-toolchain $(BIN)
+all: check-toolchain check-libs $(BIN)
 
 # Check if LLVM/Clang toolchain is available
 check-toolchain:
@@ -65,6 +70,25 @@ check-toolchain:
 		echo "Install: apt-get install lld or lld-20"; \
 		exit 1; \
 	}
+
+# Check if tkey-libs exists and is at correct version
+check-libs:
+	@if [ ! -d "$(LIBDIR)" ]; then \
+		echo "ERROR: tkey-libs not found at $(LIBDIR)"; \
+		echo ""; \
+		echo "Initialize git submodules:"; \
+		echo "  cd .. && git submodule update --init"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(LIBDIR)/libcommon.a" ]; then \
+		echo "Building tkey-libs $(TKEY_LIBS_VERSION)..."; \
+		$(MAKE) -C $(LIBDIR); \
+	fi
+
+# Build tkey-libs if needed
+build-libs:
+	@echo "Building tkey-libs $(TKEY_LIBS_VERSION)..."
+	$(MAKE) -C $(LIBDIR)
 
 # Build ELF executable
 $(ELF): $(OBJS)
@@ -92,6 +116,13 @@ clean:
 	rm -f $(OBJS) $(ELF) $(BIN)
 	@echo "Cleaned build artifacts"
 
+# Deep clean including tkey-libs
+clean-all: clean
+	@if [ -d "$(LIBDIR)" ]; then \
+		echo "Cleaning tkey-libs..."; \
+		$(MAKE) -C $(LIBDIR) clean; \
+	fi
+
 # Install to system
 install: $(BIN)
 	install -D -m 644 $(BIN) /usr/lib/tkey-luks/$(BIN)
@@ -103,6 +134,9 @@ config:
 	@echo "  CC: $(CC)"
 	@echo "  CFLAGS: $(CFLAGS)"
 	@echo "  LDFLAGS: $(LDFLAGS)"
+	@echo "  tkey-libs: $(LIBDIR) ($(TKEY_LIBS_VERSION))"
+
+.PHONY: all check-toolchain check-libs build-libs clean clean-all install config
 	@echo "  TARGET: $(TARGET)"
 	@echo "  Output: $(BIN)"
 

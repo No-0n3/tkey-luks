@@ -6,7 +6,6 @@
 #ifndef APP_PROTO_H
 #define APP_PROTO_H
 
-#include <tkey/io.h>
 #include <tkey/lib.h>
 #include <tkey/proto.h>
 
