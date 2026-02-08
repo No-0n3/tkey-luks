@@ -1,17 +1,26 @@
 # TKey Libraries and Tools
 # Official Tillitis repositories for TKey development
+#
+# IMPORTANT: This project requires specific versions for compatibility
+# After cloning, ensure submodules are at these commits:
+#   - tkey-libs:          v0.1.2
+#   - tkey-device-signer: v1.0.2
+#   - tkey-devtools:      main branch (latest)
 
 # Core TKey device libraries (for device app development)
+# Required version: v0.1.2 (uses readbyte/writebyte protocol, DST_SW=0x03)
 [submodule "submodules/tkey-libs"]
 	path = submodules/tkey-libs
 	url = https://github.com/tillitis/tkey-libs.git
 
 # Ed25519 signing device application (reference implementation)
+# Required version: v1.0.2 (compatible with tkey-libs v0.1.2)
 [submodule "submodules/tkey-device-signer"]
 	path = submodules/tkey-device-signer
 	url = https://github.com/tillitis/tkey-device-signer.git
 
 # TKey development tools (tkey-runapp, etc.)
+# Use: main branch (latest version)
 [submodule "submodules/tkey-devtools"]
 	path = submodules/tkey-devtools
 	url = https://github.com/tillitis/tkey-devtools.git
