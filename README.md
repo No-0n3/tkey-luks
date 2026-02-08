@@ -164,7 +164,43 @@ The TKey-LUKS unlock happens early in boot:
 
 ## Contributing
 
-Contributions welcome! Please open issues or pull request
+Contributions welcome! This project follows conventional commits for clear and semantic commit messages.
+
+### Commit Message Format
+
+All commits must follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
+
+```
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+**Types**: `feat`, `fix`, `docs`, `build`, `test`, `refactor`, `chore`, `ci`, `perf`
+
+**Examples**:
+- `feat(client): add support for custom challenge prompts`
+- `fix(initramfs): resolve device detection timeout`
+- `docs: update installation instructions for Fedora`
+
+### Validation
+
+Commits are automatically validated using [commitlint](https://commitlint.js.org/) in CI. To check your commits locally:
+
+```bash
+# Install dependencies
+npm install
+
+# Check last commit
+npx commitlint --last
+
+# Check commit message from stdin
+echo "feat: add new feature" | npx commitlint
+```
+
+All pull requests require passing commit message validation before merge.
 This system provides security against:
 - Unauthorized boot of stolen devices
 - Cold boot attacks (limited)
