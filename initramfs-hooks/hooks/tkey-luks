@@ -27,11 +27,11 @@ TKEY_LUKS_BIN="/usr/local/bin"
 
 # Copy TKey-LUKS client binary
 if [ -f "$TKEY_LUKS_BIN/tkey-luks-client" ]; then
-    # copy_exec doesn't work reliably for /usr/local paths, so copy manually
+    # Manually copy to preserve permissions for Go binary
     mkdir -p "${DESTDIR}/usr/local/bin"
-    cp -a "$TKEY_LUKS_BIN/tkey-luks-client" "${DESTDIR}/usr/local/bin/"
-    chmod 755 "${DESTDIR}/usr/local/bin/tkey-luks-client"
-    echo "  ✓ Copied TKey-LUKS client ($(stat -c%s "$TKEY_LUKS_BIN/tkey-luks-client" | numfmt --to=iec-i --suffix=B))"
+    cp -p "$TKEY_LUKS_BIN/tkey-luks-client" "${DESTDIR}/usr/local/bin/"
+    chmod +x "${DESTDIR}/usr/local/bin/tkey-luks-client"
+    echo "  ✓ Copied TKey-LUKS client"
 else
     echo "  ✗ WARNING: tkey-luks-client not found at $TKEY_LUKS_BIN/tkey-luks-client"
     echo "    Install with: make install (from client directory)"

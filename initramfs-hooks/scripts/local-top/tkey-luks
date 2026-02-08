@@ -20,6 +20,14 @@ esac
 # Source cryptsetup functions if available
 . /scripts/functions
 
+# Debug logging to file
+LOG_FILE="/run/tkey-luks.log"
+debug_log() {
+    echo "[$(date '+%H:%M:%S')] $*" >> "$LOG_FILE"
+}
+
+debug_log "=== TKey-LUKS script starting ==="
+
 # Configuration
 TKEY_CLIENT="/usr/local/bin/tkey-luks-client"
 TKEY_DEVICE_APP="/usr/local/lib/tkey-luks/tkey-luks-device.bin"
@@ -29,24 +37,29 @@ WAIT_INCREMENT=2
 
 # Logging functions
 log_tkey() {
+    debug_log "$1"
     log_begin_msg "TKey-LUKS: $1"
 }
 
 log_tkey_success() {
+    debug_log "SUCCESS: $1"
     log_success_msg "TKey-LUKS: $1"
 }
 
 log_tkey_failure() {
+    debug_log "FAILURE: $1"
     log_failure_msg "TKey-LUKS: $1"
 }
 
 # Wait for TKey device to appear
 wait_for_tkey() {
+    debug_log "Waiting for TKey device at $TKEY_SERIAL..."
     log_tkey "Waiting for TKey device..."
     
     local waited=0
     while [ $waited -lt $MAX_WAIT ]; do
         if [ -e "$TKEY_SERIAL" ]; then
+            debug_log "TKey device found!"
             log_tkey_success "TKey device found at $TKEY_SERIAL"
             return 0
         fi
@@ -66,15 +79,23 @@ wait_for_tkey() {
 
 # Check if TKey client and device app are available
 check_tkey_components() {
+    debug_log "Checking TKey components..."
+    debug_log "  Client: $TKEY_CLIENT"
+    debug_log "  Device app: $TKEY_DEVICE_APP"
+    
     if [ ! -x "$TKEY_CLIENT" ]; then
+        debug_log "Client not found or not executable"
         log_tkey_failure "TKey client not found: $TKEY_CLIENT"
         return 1
     fi
     
     if [ ! -f "$TKEY_DEVICE_APP" ]; then
+        debug_log "Device app not found"
         log_tkey_failure "TKey device app not found: $TKEY_DEVICE_APP"
         return 1
     fi
+    
+    debug_log "All components present"
     
     return 0
 }
@@ -181,55 +202,64 @@ tkey_luks_unlock() {
     fi
     
     # Find LUKS devices that need unlocking
-    # This is typically set by cryptsetup via /conf/conf.d/cryptroot
-    # For now, we'll handle the root device if it's encrypted
-    
-    # Read cryptroot configuration if available
-    if [ -f /conf/conf.d/cryptroot ]; then
-        . /conf/conf.d/cryptroot
-    fi
-    
-    # Get LUKS device from kernel command line or cryptroot config
-    # Format: cryptdevice=/dev/sdXY:mapper_name or root=UUID=...
+    # Read from /conf/conf.d/cryptroot (generated from /etc/crypttab)
     local luks_device=""
     local mapper_name=""
     
-    # Parse from cryptsetup configuration
-    # This is a simplified version - production would need more robust parsing
-    if [ -n "$CRYPTOPTS" ]; then
-        # Extract device and mapper name from cryptsetup options
-        # Format: target=source-device,source=UUID=...,key=...
-        mapper_name=$(echo "$CRYPTOPTS" | sed -n 's/.*target=\([^,]*\).*/\1/p')
-        luks_device=$(echo "$CRYPTOPTS" | sed -n 's/.*source=\([^,]*\).*/\1/p')
+    debug_log "Looking for LUKS devices to unlock..."
+    
+    # Parse cryptroot configuration (crypttab format)
+    # Format: target source keyfile options
+    if [ -f /conf/conf.d/cryptroot ]; then
+        debug_log "Reading /conf/conf.d/cryptroot"
+        while read target source keyfile options; do
+            # Skip comments and empty lines
+            case "$target" in
+                ""|\#*) continue ;;
+            esac
+            
+            debug_log "Found crypttab entry: $target $source"
+            
+            # Use the first LUKS entry we find
+            mapper_name="$target"
+            
+            # Source can be UUID=... or /dev/...
+            if echo "$source" | grep -q "UUID="; then
+                uuid=$(echo "$source" | sed 's/UUID=//')
+                luks_device="/dev/disk/by-uuid/$uuid"
+                debug_log "Resolved UUID to: $luks_device"
+            else
+                luks_device="$source"
+            fi
+            
+            break  # Only handle first device for now
+        done < /conf/conf.d/cryptroot
     fi
     
-    # If not found, try to detect from /proc/cmdline
+    # Fallback: try to find from /proc/cmdline
     if [ -z "$luks_device" ]; then
+        debug_log "No cryptroot config, checking /proc/cmdline"
         for param in $(cat /proc/cmdline); do
             case "$param" in
                 cryptdevice=*)
                     luks_device="${param#cryptdevice=}"
                     mapper_name="${luks_device##*:}"
                     luks_device="${luks_device%%:*}"
-                    ;;
-                root=*)
-                    # Check if root is a LUKS device
-                    root_dev="${param#root=}"
-                    if echo "$root_dev" | grep -q "mapper"; then
-                        mapper_name="${root_dev##*/}"
-                    fi
+                    debug_log "Found from cmdline: $luks_device -> $mapper_name"
                     ;;
             esac
         done
     fi
     
     # If still no device found, skip TKey unlock
-    if [ -z "$luks_device" ]; then
+    if [ -z "$luks_device" ] || [ -z "$mapper_name" ]; then
+        debug_log "No LUKS device found to unlock"
         log_tkey "No LUKS device configured for unlock"
         return 1
     fi
     
-    log_tkey "Target device: $luks_device → /dev/mapper/$mapper_name"
+    debug_log "Target: $luks_device -> /dev/mapper/$mapper_name"
+    log_tkey "Target device: $mapper_name"
     
     # Retry loop for challenge/unlock
     while [ $retry_count -lt $max_retries ]; do
@@ -262,8 +292,20 @@ tkey_luks_unlock() {
 
 # Only run if not already unlocked and TKey is configured
 # Check if we should handle this
+debug_log "TKEY_LUKS_ENABLED=$TKEY_LUKS_ENABLED"
+debug_log "Checking if TKey unlock should run..."
+
 if [ "$TKEY_LUKS_ENABLED" != "no" ] && [ "$TKEY_LUKS_ENABLED" != "0" ]; then
+    debug_log "Starting TKey unlock attempt..."
     # Attempt TKey unlock
     # If it fails, initramfs will continue to standard cryptsetup password prompt
-    tkey_luks_unlock || true
+    if tkey_luks_unlock; then
+        debug_log "TKey unlock succeeded!"
+    else
+        debug_log "TKey unlock failed or skipped, falling back to password"
+    fi
+else
+    debug_log "TKey disabled by TKEY_LUKS_ENABLED variable"
 fi
+
+debug_log "=== TKey-LUKS script finished ==="
