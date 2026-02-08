@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VM_DIR="$SCRIPT_DIR/vm"
 DISK_SIZE="20G"
 DISK_IMAGE="$VM_DIR/ubuntu-2404-tkey-test.qcow2"
-ISO_URL="https://releases.ubuntu.com/24.04/ubuntu-24.04-live-server-amd64.iso"
+ISO_URL="https://releases.ubuntu.com/noble/ubuntu-24.04.3-live-server-amd64.iso"
 ISO_FILE="$VM_DIR/ubuntu-24.04-server-amd64.iso"
 MOUNT_POINT="$VM_DIR/mnt"
 
