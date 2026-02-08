@@ -134,8 +134,8 @@ clean-all: clean
 
 # Install to system
 install: $(BIN)
-	install -D -m 644 $(BIN) /usr/lib/tkey-luks/$(BIN)
-	@echo "Installed to /usr/lib/tkey-luks/$(BIN)"
+	install -D -m 644 $(BIN) /usr/local/lib/tkey-luks/$(BIN)
+	@echo "Installed to /usr/local/lib/tkey-luks/$(BIN)"
 
 # Show build configuration
 config:

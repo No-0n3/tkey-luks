@@ -1,0 +1,59 @@
+#!/bin/sh
+# initramfs hook for TKey-LUKS
+# This script is executed when initramfs is built (update-initramfs)
+# It copies necessary files into the initramfs image
+
+PREREQ=""
+
+prereqs()
+{
+    echo "$PREREQ"
+}
+
+case $1 in
+prereqs)
+    prereqs
+    exit 0
+    ;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+echo "TKey-LUKS: Installing components into initramfs..."
+
+# Define installation paths
+TKEY_LUKS_LIB="/usr/local/lib/tkey-luks"
+TKEY_LUKS_BIN="/usr/local/bin"
+
+# Copy TKey-LUKS client binary
+if [ -f "$TKEY_LUKS_BIN/tkey-luks-client" ]; then
+    copy_exec "$TKEY_LUKS_BIN/tkey-luks-client" /usr/local/bin
+    echo "  ✓ Copied TKey-LUKS client"
+else
+    echo "  ✗ WARNING: tkey-luks-client not found at $TKEY_LUKS_BIN/tkey-luks-client"
+    echo "    Install with: make install (from client directory)"
+fi
+
+# Copy device app binary
+if [ -f "$TKEY_LUKS_LIB/tkey-luks-device.bin" ]; then
+    mkdir -p "${DESTDIR}${TKEY_LUKS_LIB}"
+    cp "$TKEY_LUKS_LIB/tkey-luks-device.bin" "${DESTDIR}${TKEY_LUKS_LIB}/"
+    echo "  ✓ Copied TKey device app"
+else
+    echo "  ✗ WARNING: tkey-luks-device.bin not found at $TKEY_LUKS_LIB/tkey-luks-device.bin"
+    echo "    Install with: make install (from device-app directory)"
+fi
+
+# Copy required libraries (Go binaries are typically static, but check just in case)
+# The tkey-luks-client is built with static linking, so this may not be needed
+# If dynamic libraries are needed, list them here:
+# copy_exec /usr/lib/x86_64-linux-gnu/libsomething.so
+
+# Copy device nodes helper (if needed for serial device access)
+# Serial device /dev/ttyACM0 should be available in initramfs already via udev
+
+# Ensure required modules are loaded
+# CDC-ACM module for TKey USB-serial communication
+manual_add_modules cdc-acm
+
+echo "TKey-LUKS: Installation complete"

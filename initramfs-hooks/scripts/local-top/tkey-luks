@@ -1,0 +1,269 @@
+#!/bin/sh
+# TKey-LUKS unlock script for initramfs
+# This runs during boot in the local-top phase (before cryptroot)
+# It handles LUKS unlocking using TKey hardware device
+
+PREREQ="udev"
+
+prereqs()
+{
+    echo "$PREREQ"
+}
+
+case $1 in
+prereqs)
+    prereqs
+    exit 0
+    ;;
+esac
+
+# Source cryptsetup functions if available
+. /scripts/functions
+
+# Configuration
+TKEY_CLIENT="/usr/local/bin/tkey-luks-client"
+TKEY_DEVICE_APP="/usr/local/lib/tkey-luks/tkey-luks-device.bin"
+TKEY_SERIAL="/dev/ttyACM0"
+MAX_WAIT=30
+WAIT_INCREMENT=2
+
+# Logging functions
+log_tkey() {
+    log_begin_msg "TKey-LUKS: $1"
+}
+
+log_tkey_success() {
+    log_success_msg "TKey-LUKS: $1"
+}
+
+log_tkey_failure() {
+    log_failure_msg "TKey-LUKS: $1"
+}
+
+# Wait for TKey device to appear
+wait_for_tkey() {
+    log_tkey "Waiting for TKey device..."
+    
+    local waited=0
+    while [ $waited -lt $MAX_WAIT ]; do
+        if [ -e "$TKEY_SERIAL" ]; then
+            log_tkey_success "TKey device found at $TKEY_SERIAL"
+            return 0
+        fi
+        
+        sleep $WAIT_INCREMENT
+        waited=$((waited + WAIT_INCREMENT))
+        
+        # Show progress
+        if [ $((waited % 6)) -eq 0 ]; then
+            echo "Still waiting for TKey... ($waited/${MAX_WAIT}s)"
+        fi
+    done
+    
+    log_tkey_failure "TKey device not found after ${MAX_WAIT}s"
+    return 1
+}
+
+# Check if TKey client and device app are available
+check_tkey_components() {
+    if [ ! -x "$TKEY_CLIENT" ]; then
+        log_tkey_failure "TKey client not found: $TKEY_CLIENT"
+        return 1
+    fi
+    
+    if [ ! -f "$TKEY_DEVICE_APP" ]; then
+        log_tkey_failure "TKey device app not found: $TKEY_DEVICE_APP"
+        return 1
+    fi
+    
+    return 0
+}
+
+# Prompt for challenge (what user thinks is "password")
+prompt_for_challenge() {
+    local prompt="${1:-Enter TKey challenge}"
+    local challenge=""
+    
+    # Use plymouth if available (graphical boot)
+    if command -v plymouth >/dev/null 2>&1 && plymouth --ping 2>/dev/null; then
+        challenge=$(plymouth ask-for-password --prompt="$prompt")
+    else
+        # Fallback to console input
+        printf "%s: " "$prompt" >&2
+        stty -echo
+        read -r challenge
+        stty echo
+        printf "\n" >&2
+    fi
+    
+    echo "$challenge"
+}
+
+# Derive key using TKey with challenge
+derive_key_with_tkey() {
+    local challenge="$1"
+    local output_file="$2"
+    
+    log_tkey "Loading device app and deriving key..."
+    
+    # Run TKey client with challenge
+    # The client will:
+    #   1. Load device app to TKey
+    #   2. Send challenge
+    #   3. Wait for physical touch (security feature)
+    #   4. Derive 64-byte key
+    #   5. Output key to file
+    
+    if echo "$challenge" | "$TKEY_CLIENT" \
+        --device "$TKEY_SERIAL" \
+        --device-app "$TKEY_DEVICE_APP" \
+        --output "$output_file" \
+        --challenge-from-stdin \
+        2>/tmp/tkey-error.log; then
+        
+        log_tkey_success "Key derived successfully"
+        return 0
+    else
+        log_tkey_failure "Key derivation failed"
+        if [ -f /tmp/tkey-error.log ]; then
+            cat /tmp/tkey-error.log >&2
+        fi
+        return 1
+    fi
+}
+
+# Unlock LUKS device with TKey-derived key
+unlock_luks_with_tkey() {
+    local luks_device="$1"
+    local mapper_name="$2"
+    local challenge="$3"
+    local keyfile="/tmp/tkey-key-$$.bin"
+    
+    # Derive key from TKey
+    if ! derive_key_with_tkey "$challenge" "$keyfile"; then
+        rm -f "$keyfile"
+        return 1
+    fi
+    
+    # Attempt to unlock LUKS volume
+    log_tkey "Unlocking LUKS device: $luks_device"
+    
+    if cryptsetup luksOpen "$luks_device" "$mapper_name" --key-file="$keyfile" 2>/tmp/luks-error.log; then
+        log_tkey_success "LUKS device unlocked successfully"
+        rm -f "$keyfile"
+        return 0
+    else
+        log_tkey_failure "Failed to unlock LUKS device"
+        if [ -f /tmp/luks-error.log ]; then
+            cat /tmp/luks-error.log >&2
+        fi
+        rm -f "$keyfile"
+        return 1
+    fi
+}
+
+# Main unlock handler
+tkey_luks_unlock() {
+    local retry_count=0
+    local max_retries=3
+    
+    # Check if TKey components are available
+    if ! check_tkey_components; then
+        echo "TKey-LUKS disabled: components not available"
+        return 1
+    fi
+    
+    # Wait for TKey device
+    if ! wait_for_tkey; then
+        echo "TKey-LUKS disabled: device not found"
+        echo "Will fall back to standard password prompt"
+        return 1
+    fi
+    
+    # Find LUKS devices that need unlocking
+    # This is typically set by cryptsetup via /conf/conf.d/cryptroot
+    # For now, we'll handle the root device if it's encrypted
+    
+    # Read cryptroot configuration if available
+    if [ -f /conf/conf.d/cryptroot ]; then
+        . /conf/conf.d/cryptroot
+    fi
+    
+    # Get LUKS device from kernel command line or cryptroot config
+    # Format: cryptdevice=/dev/sdXY:mapper_name or root=UUID=...
+    local luks_device=""
+    local mapper_name=""
+    
+    # Parse from cryptsetup configuration
+    # This is a simplified version - production would need more robust parsing
+    if [ -n "$CRYPTOPTS" ]; then
+        # Extract device and mapper name from cryptsetup options
+        # Format: target=source-device,source=UUID=...,key=...
+        mapper_name=$(echo "$CRYPTOPTS" | sed -n 's/.*target=\([^,]*\).*/\1/p')
+        luks_device=$(echo "$CRYPTOPTS" | sed -n 's/.*source=\([^,]*\).*/\1/p')
+    fi
+    
+    # If not found, try to detect from /proc/cmdline
+    if [ -z "$luks_device" ]; then
+        for param in $(cat /proc/cmdline); do
+            case "$param" in
+                cryptdevice=*)
+                    luks_device="${param#cryptdevice=}"
+                    mapper_name="${luks_device##*:}"
+                    luks_device="${luks_device%%:*}"
+                    ;;
+                root=*)
+                    # Check if root is a LUKS device
+                    root_dev="${param#root=}"
+                    if echo "$root_dev" | grep -q "mapper"; then
+                        mapper_name="${root_dev##*/}"
+                    fi
+                    ;;
+            esac
+        done
+    fi
+    
+    # If still no device found, skip TKey unlock
+    if [ -z "$luks_device" ]; then
+        log_tkey "No LUKS device configured for unlock"
+        return 1
+    fi
+    
+    log_tkey "Target device: $luks_device → /dev/mapper/$mapper_name"
+    
+    # Retry loop for challenge/unlock
+    while [ $retry_count -lt $max_retries ]; do
+        # Prompt for challenge
+        if [ $retry_count -eq 0 ]; then
+            challenge=$(prompt_for_challenge "TKey challenge for $mapper_name")
+        else
+            challenge=$(prompt_for_challenge "TKey challenge (attempt $((retry_count + 1))/$max_retries)")
+        fi
+        
+        # Check if user wants to skip TKey
+        if [ "$challenge" = "skip" ] || [ "$challenge" = "SKIP" ]; then
+            log_tkey "User requested skip - falling back to password"
+            return 1
+        fi
+        
+        # Attempt unlock with TKey
+        if unlock_luks_with_tkey "$luks_device" "$mapper_name" "$challenge"; then
+            return 0
+        fi
+        
+        retry_count=$((retry_count + 1))
+        echo "Unlock failed. Please try again or type 'skip' for password fallback."
+        sleep 1
+    done
+    
+    log_tkey_failure "Max retries reached. Falling back to password."
+    return 1
+}
+
+# Only run if not already unlocked and TKey is configured
+# Check if we should handle this
+if [ "$TKEY_LUKS_ENABLED" != "no" ] && [ "$TKEY_LUKS_ENABLED" != "0" ]; then
+    # Attempt TKey unlock
+    # If it fails, initramfs will continue to standard cryptsetup password prompt
+    tkey_luks_unlock || true
+fi

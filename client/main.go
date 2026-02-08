@@ -355,22 +355,25 @@ func UnlockLUKS(keyfile string, luksImage string, mapperName string) error {
 func usage() {
 	fmt.Fprintf(os.Stderr, `Usage:
 
-%s [flags] --challenge STRING --luks-image PATH
+%s [flags]
 
-Derive a key from TKey and unlock a LUKS volume.
+Derive a key from TKey and optionally unlock a LUKS volume.
 
 Flags:
-  --challenge STRING    Challenge string to use for key derivation (required)
-  --luks-image PATH     Path to LUKS image to unlock (required)
-  --mapper-name NAME    Device mapper name (default: tkey-luks)
-  --app PATH            Path to device app binary (default: ../device-app/tkey-luks-device.bin)
-  --skip-load-app       Skip loading app (use if app already loaded)
-  --port PATH           TKey serial port (default: auto-detect)
-  --speed BPS           Serial port speed (default: 62500)
-  --uss PATH            User Supplied Secret file (32 bytes)
-  --save-key FILE       Save derived key to file (for testing)
-  --verbose             Enable verbose output
-  --help                Show this help
+  --challenge STRING       Challenge string for key derivation
+  --challenge-from-stdin   Read challenge from stdin (for piping)
+  --luks-image PATH        Path to LUKS image to unlock
+  --mapper-name NAME       Device mapper name (default: tkey-luks)
+  --app PATH               Path to device app binary
+  --device PATH            TKey device path (default: /dev/ttyACM0)
+  --skip-load-app          Skip loading app (use if app already loaded)
+  --port PATH              TKey serial port (default: auto-detect)
+  --speed BPS              Serial port speed (default: 62500)
+  --uss PATH               User Supplied Secret file (32 bytes)
+  --save-key FILE          Save derived key to file
+  --output FILE            Output key to file (use '-' for stdout)
+  --verbose                Enable verbose output
+  --help                   Show this help
 
 Examples:
   # Unlock LUKS volume with challenge
@@ -379,23 +382,32 @@ Examples:
   # Unlock test image
   %s --challenge "luks-challenge-2024" --luks-image test-luks-100mb.img
 
-  # Save key instead of unlocking
-  %s --challenge "test" --save-key derived-key.bin
-`, os.Args[0], os.Args[0], os.Args[0], os.Args[0])
+  # Derive key from stdin and output to stdout (for piping to cryptsetup)
+  echo "my challenge" | %s --challenge-from-stdin --output -
+
+  # Use with cryptsetup directly
+  echo "my challenge" | %s --challenge-from-stdin --output - | \
+    cryptsetup luksOpen /dev/sda2 root_crypt
+
+  # Save key for later use
+  %s --challenge "test" --output keyfile.bin
+`, os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0])
 }
 
 func main() {
 	var (
-		challengeStr string
-		luksImage    string
-		mapperName   = "tkey-luks"
-		appPath      = "../device-app/tkey-luks-device.bin"
-		skipLoadApp  bool
-		portPath     string
-		speed        = tkeyclient.SerialSpeed
-		ussPath      string
-		saveKeyPath  string
-		verbose      bool
+		challengeStr    string
+		challengeStdin  bool
+		luksImage       string
+		mapperName      = "tkey-luks"
+		appPath         = "../device-app/tkey-luks-device.bin"
+		skipLoadApp     bool
+		portPath        string
+		speed           = tkeyclient.SerialSpeed
+		ussPath         string
+		saveKeyPath     string
+		outputPath      string
+		verbose         bool
 	)
 
 	// Simple flag parsing
@@ -408,6 +420,8 @@ func main() {
 			}
 			challengeStr = args[i+1]
 			i++
+		case "--challenge-from-stdin":
+			challengeStdin = true
 		case "--luks-image":
 			if i+1 >= len(args) {
 				le.Fatal("--luks-image requires an argument")
@@ -426,9 +440,23 @@ func main() {
 			}
 			appPath = args[i+1]
 			i++
+		case "--device-app":
+			// Alias for --app
+			if i+1 >= len(args) {
+				le.Fatal("--device-app requires an argument")
+			}
+			appPath = args[i+1]
+			i++
 		case "--port":
 			if i+1 >= len(args) {
 				le.Fatal("--port requires an argument")
+			}
+			portPath = args[i+1]
+			i++
+		case "--device":
+			// Alias for --port
+			if i+1 >= len(args) {
+				le.Fatal("--device requires an argument")
 			}
 			portPath = args[i+1]
 			i++
@@ -450,6 +478,12 @@ func main() {
 			}
 			saveKeyPath = args[i+1]
 			i++
+		case "--output":
+			if i+1 >= len(args) {
+				le.Fatal("--output requires an argument")
+			}
+			outputPath = args[i+1]
+			i++
 		case "--skip-load-app":
 			skipLoadApp = true
 		case "--verbose":
@@ -462,12 +496,28 @@ func main() {
 		}
 	}
 
-	if challengeStr == "" {
-		le.Fatal("--challenge is required\n\nUse --help for usage")
+	// Read challenge from stdin if requested
+	if challengeStdin {
+		if verbose {
+			le.Printf("Reading challenge from stdin...")
+		}
+		stdinData, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			le.Fatalf("Failed to read from stdin: %v", err)
+		}
+		challengeStr = string(bytes.TrimSpace(stdinData))
+		if challengeStr == "" {
+			le.Fatal("Empty challenge received from stdin")
+		}
 	}
 
-	if luksImage == "" && saveKeyPath == "" {
-		le.Fatal("Either --luks-image or --save-key is required\n\nUse --help for usage")
+	if challengeStr == "" {
+		le.Fatal("--challenge or --challenge-from-stdin is required\n\nUse --help for usage")
+	}
+
+	// At least one output method must be specified
+	if luksImage == "" && saveKeyPath == "" && outputPath == "" {
+		le.Fatal("At least one of --luks-image, --save-key, or --output is required\n\nUse --help for usage")
 	}
 
 	if !verbose {
@@ -542,18 +592,47 @@ func main() {
 		le.Fatalf("Failed to derive key: %v", err)
 	}
 
-	le.Printf("Derived key: %s", hex.EncodeToString(key))
+	if verbose {
+		le.Printf("Derived key: %s", hex.EncodeToString(key))
+	}
 
-	// Save key to file if requested
+	// Output key if requested
+	if outputPath != "" {
+		if outputPath == "-" {
+			// Write to stdout (for piping)
+			if _, err := os.Stdout.Write(key); err != nil {
+				le.Fatalf("Failed to write key to stdout: %v", err)
+			}
+		} else {
+			// Write to file
+			if err := os.WriteFile(outputPath, key, 0600); err != nil {
+				le.Fatalf("Failed to write key to file: %v", err)
+			}
+			if verbose {
+				le.Printf("Key written to: %s", outputPath)
+			}
+		}
+
+		// If only outputting key, we're done
+		if luksImage == "" && saveKeyPath == "" {
+			return
+		}
+	}
+
+	// Save key to file if requested (legacy/compatibility)
 	if saveKeyPath != "" {
 		if err := os.WriteFile(saveKeyPath, key, 0600); err != nil {
 			le.Fatalf("Failed to save key: %v", err)
 		}
-		le.Printf("Key saved to: %s", saveKeyPath)
+		if verbose {
+			le.Printf("Key saved to: %s", saveKeyPath)
+		}
 
 		if luksImage == "" {
 			// Just saving key, we're done
-			le.Printf("Success!")
+			if verbose {
+				le.Printf("Success!")
+			}
 			return
 		}
 	}
