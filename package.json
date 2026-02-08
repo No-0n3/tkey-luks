@@ -1,0 +1,30 @@
+{
+  "name": "tkey-luks",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Unlock LUKS encrypted root partitions at boot using Tillitis TKey hardware security key.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "commitlint": "commitlint --edit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/No-0n3/tkey-luks.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/No-0n3/tkey-luks/issues"
+  },
+  "homepage": "https://github.com/No-0n3/tkey-luks#readme",
+  "devDependencies": {
+    "@commitlint/cli": "^20.4.1",
+    "@commitlint/config-conventional": "^20.4.1"
+  }
+}
