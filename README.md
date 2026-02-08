@@ -166,7 +166,7 @@ The TKey-LUKS unlock happens early in boot:
 
 ## License
 
-[To be determined]
+This project is licensed under the BSD-2-Clause License - see the [LICENSE](LICENSE) file for details.
 
 ## Contributing
 
@@ -261,7 +261,7 @@ See [docs/SECURITY.md](docs/SECURITY.md) for full threat model and consideration
 
 ## License
 
-[To be determined]
+This project is licensed under the BSD-2-Clause License - see the [LICENSE](LICENSE) file for details.
 
 ## Contributing
 
