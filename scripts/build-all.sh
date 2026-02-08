@@ -38,7 +38,7 @@ if [ -f "$PROJECT_ROOT/client/Makefile" ]; then
     echo "✓ Client built"
 elif [ -f "$PROJECT_ROOT/client/go.mod" ]; then
     cd "$PROJECT_ROOT/client"
-    go build -o tkey-luks-unlock
+    go build -o tkey-luks-client
     echo "✓ Client built (Go)"
 else
     echo "⚠ Client build system not found, skipping"
@@ -49,19 +49,21 @@ echo ""
 echo "[3/3] Verifying builds..."
 cd "$PROJECT_ROOT"
 
-if [ -f "client/tkey-luks-unlock" ] || [ -f "client/target/release/tkey-luks-unlock" ]; then
-    CLIENT_BIN=$(find client -name "tkey-luks-unlock" -type f | head -1)
+if [ -f "client/tkey-luks-client" ]; then
+    CLIENT_BIN="client/tkey-luks-client"
     echo "✓ Client binary: $CLIENT_BIN"
-    file "$CLIENT_BIN"
+    ls -lh "$CLIENT_BIN"
     echo ""
-    echo "Binary size: $(du -h "$CLIENT_BIN" | cut -f1)"
     
-    # Check if statically linked
-    if ldd "$CLIENT_BIN" 2>&1 | grep -q "not a dynamic executable"; then
+    # Check if statically linked (force English locale for consistent output)
+    LDD_OUTPUT=$(LC_ALL=C ldd "$CLIENT_BIN" 2>&1)
+    if echo "$LDD_OUTPUT" | grep -q "not a dynamic executable"; then
+        echo "✓ Binary is statically linked"
+    elif echo "$LDD_OUTPUT" | grep -q "statically linked"; then
         echo "✓ Binary is statically linked"
     else
         echo "⚠ Binary has dynamic dependencies:"
-        ldd "$CLIENT_BIN" | head -10
+        echo "$LDD_OUTPUT" | head -10
     fi
 else
     echo "⚠ Client binary not found"

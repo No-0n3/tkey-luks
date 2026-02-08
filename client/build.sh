@@ -13,8 +13,8 @@ go mod download
 go mod verify
 
 # Build client
-printf "\nBuilding client binary...\n"
-go build -o tkey-luks-client main.go
+printf "\nBuilding client binary (static)...\n"
+CGO_ENABLED=0 go build -ldflags="-s -w -extldflags '-static'" -o tkey-luks-client main.go
 
 # Verifying SHA-512 hash
 printf "\nVerifying SHA-512 hash...\n"

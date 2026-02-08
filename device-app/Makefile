@@ -45,7 +45,7 @@ OBJS = $(SRCS:.c=.o)
 INCLUDES = -I$(LIBDIR)/include -I$(LIBDIR)
 
 # Default target
-all: check-toolchain check-libs $(BIN)
+all: check-toolchain check-libs $(BIN) verify-hash
 
 # Check if LLVM/Clang toolchain is available
 check-toolchain:
@@ -102,13 +102,24 @@ $(BIN): $(ELF)
 	@ls -lh $(BIN)
 	@echo ""
 	@echo "Device app ready for TKey"
-	@echo ""
+
+# Verify binary integrity against existing hash
+verify-hash:
+	@if [ ! -f "$(BIN).sha512" ]; then \
+		echo "Warning: Hash file $(BIN).sha512 not found. Skipping verification."; \
+	else \
+		echo "Verifying $(BIN) against existing hash..."; \
+		sha512sum -c $(BIN).sha512 && echo "✓ Binary verified" || (echo "✗ Verification failed - binary differs from expected hash" && exit 1); \
+	fi
+
+# Generate new SHA-512 hash (use this to update the hash file)
+generate-hash: $(BIN)
 	@echo "Generating SHA-512 hash..."
 	@sha512sum $(BIN) > $(BIN).sha512
 	@echo "Hash file: $(BIN).sha512"
 
-# Verify binary integrity against hash
-verify: $(BIN).sha512
+# Verify binary integrity against hash (alias for verify-hash)
+verify: verify-hash
 	@echo "Verifying $(BIN) integrity..."
 	@sha512sum -c $(BIN).sha512 && echo "✓ Binary verified" || (echo "✗ Verification failed" && exit 1)
 
@@ -147,4 +158,4 @@ config:
 	@echo "  TARGET: $(TARGET)"
 	@echo "  Output: $(BIN)"
 
-.PHONY: all check-toolchain check-libs build-libs clean clean-all install config verify
+.PHONY: all check-toolchain check-libs build-libs clean clean-all install config verify verify-hash generate-hash

@@ -3,7 +3,7 @@
 
 # Go build settings
 GOCMD = go
-GOBUILD = $(GOCMD) build
+GOBUILD = CGO_ENABLED=0 $(GOCMD) build
 GOCLEAN = $(GOCMD) clean
 GOTEST = $(GOCMD) test
 GOMOD = $(GOCMD) mod
@@ -13,10 +13,10 @@ BINARY = tkey-luks-client
 HASH = $(BINARY).sha512
 
 # Build flags for static linking and reduced size
-LDFLAGS = -ldflags="-s -w"
+LDFLAGS = -ldflags="-s -w -extldflags '-static'"
 
-# Default target - build binary and generate hash
-all: $(BINARY) $(HASH)
+# Default target - build binary and verify against existing hash
+all: $(BINARY) verify-hash
 
 # Build the Go binary
 $(BINARY): main.go go.mod
@@ -25,21 +25,30 @@ $(BINARY): main.go go.mod
 	@echo "Built: $(BINARY)"
 	@ls -lh $(BINARY)
 
-# Generate SHA-512 hash
-$(HASH): $(BINARY)
+# Verify binary integrity against existing hash
+verify-hash:
+	@if [ ! -f "$(HASH)" ]; then \
+		echo "Warning: Hash file $(HASH) not found. Skipping verification."; \
+	else \
+		echo "Verifying $(BINARY) against existing hash..."; \
+		sha512sum -c $(HASH) && echo "✓ Binary verified" || (echo "✗ Verification failed - binary differs from expected hash" && exit 1); \
+	fi
+
+# Generate new SHA-512 hash (use this to update the hash file)
+generate-hash: $(BINARY)
 	@echo "Generating SHA-512 hash..."
 	@sha512sum $(BINARY) > $(HASH)
 	@echo "Hash file: $(HASH)"
 
-# Verify binary integrity against hash
-verify: $(HASH)
+# Verify binary integrity against hash (alias for verify-hash)
+verify: verify-hash
 	@echo "Verifying $(BINARY) integrity..."
 	@sha512sum -c $(HASH) && echo "✓ Binary verified" || (echo "✗ Verification failed" && exit 1)
 
 # Clean build artifacts
 clean:
 	$(GOCLEAN)
-	rm -f $(BINARY) $(HASH)
+	rm -f $(BINARY)
 	@echo "Cleaned build artifacts"
 
 # Download and verify dependencies
@@ -72,4 +81,4 @@ config:
 	@echo "Dependencies:"
 	@$(GOMOD) graph | head -20
 
-.PHONY: all verify clean deps test install debug config
+.PHONY: all verify verify-hash generate-hash clean deps test install debug config
