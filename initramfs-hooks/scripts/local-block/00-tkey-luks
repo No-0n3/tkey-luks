@@ -20,10 +20,15 @@ esac
 # Source cryptsetup functions if available
 . /scripts/functions
 
-# Debug logging to file
+# Debug logging to kernel log and file
 LOG_FILE="/run/tkey-luks.log"
 debug_log() {
-    echo "[$(date '+%H:%M:%S')] $*" >> "$LOG_FILE"
+    # Try to log to file (might not work in early boot)
+    echo "[$(date '+%H:%M:%S')] $*" >> "$LOG_FILE" 2>/dev/null || true
+    # Also log to console/kmsg for visibility
+    echo "TKey-LUKS: $*" >&2
+    # Try kernel log
+    echo "<6>tkey-luks: $*" > /dev/kmsg 2>/dev/null || true
 }
 
 debug_log "=== TKey-LUKS script starting ==="
@@ -188,16 +193,21 @@ tkey_luks_unlock() {
     local retry_count=0
     local max_retries=3
     
+    debug_log "tkey_luks_unlock() called"
+    echo "TKey-LUKS: Starting unlock process..." >&2
+    
     # Check if TKey components are available
+    debug_log "Checking TKey components..."
     if ! check_tkey_components; then
-        echo "TKey-LUKS disabled: components not available"
+        echo "TKey-LUKS disabled: components not available" >&2
         return 1
     fi
     
     # Wait for TKey device
+    debug_log "Waiting for TKey device..."
     if ! wait_for_tkey; then
-        echo "TKey-LUKS disabled: device not found"
-        echo "Will fall back to standard password prompt"
+        echo "TKey-LUKS disabled: device not found" >&2
+        echo "Will fall back to standard password prompt" >&2
         return 1
     fi
     
@@ -292,20 +302,26 @@ tkey_luks_unlock() {
 
 # Only run if not already unlocked and TKey is configured
 # Check if we should handle this
-debug_log "TKEY_LUKS_ENABLED=$TKEY_LUKS_ENABLED"
+debug_log "TKEY_LUKS_ENABLED=${TKEY_LUKS_ENABLED:-(unset)}"
 debug_log "Checking if TKey unlock should run..."
 
+# Always run unless explicitly disabled
 if [ "$TKEY_LUKS_ENABLED" != "no" ] && [ "$TKEY_LUKS_ENABLED" != "0" ]; then
     debug_log "Starting TKey unlock attempt..."
+    echo "TKey-LUKS: Attempting unlock..." >&2
+    
     # Attempt TKey unlock
     # If it fails, initramfs will continue to standard cryptsetup password prompt
     if tkey_luks_unlock; then
         debug_log "TKey unlock succeeded!"
+        echo "TKey-LUKS: Unlock successful!" >&2
     else
         debug_log "TKey unlock failed or skipped, falling back to password"
+        echo "TKey-LUKS: Falling back to password prompt" >&2
     fi
 else
     debug_log "TKey disabled by TKEY_LUKS_ENABLED variable"
+    echo "TKey-LUKS: Disabled (TKEY_LUKS_ENABLED=$TKEY_LUKS_ENABLED)" >&2
 fi
 
 debug_log "=== TKey-LUKS script finished ==="
