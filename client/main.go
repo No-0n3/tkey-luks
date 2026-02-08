@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/tillitis/tkeyclient"
@@ -394,13 +395,49 @@ Examples:
 `, os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0])
 }
 
+// findDeviceBinary searches for the device binary in multiple locations
+func findDeviceBinary() string {
+	const deviceBinary = "tkey-luks-device.bin"
+	
+	// Try multiple locations in order of preference
+	searchPaths := []string{
+		// 1. Same directory as the client executable
+		"",  // Will be replaced with executable's directory
+		// 2. System installation path (from device-app Makefile)
+		"/usr/local/lib/tkey-luks/" + deviceBinary,
+		// 3. Development path (relative from source)
+		"../device-app/" + deviceBinary,
+		// 4. Current directory
+		"./" + deviceBinary,
+	}
+	
+	// Get executable's directory and use it for first search path
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		searchPaths[0] = filepath.Join(exeDir, deviceBinary)
+	}
+	
+	// Search for the binary in each path
+	for _, path := range searchPaths {
+		if path == "" {
+			continue
+		}
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	
+	// Return development path as fallback (will error later if not found)
+	return "../device-app/" + deviceBinary
+}
+
 func main() {
 	var (
 		challengeStr    string
 		challengeStdin  bool
 		luksImage       string
 		mapperName      = "tkey-luks"
-		appPath         = "../device-app/tkey-luks-device.bin"
+		appPath         = findDeviceBinary()
 		skipLoadApp     bool
 		portPath        string
 		speed           = tkeyclient.SerialSpeed
@@ -522,12 +559,19 @@ func main() {
 
 	if !verbose {
 		tkeyclient.SilenceLogging()
+	} else {
+		le.Printf("Using device app from: %s", appPath)
 	}
 
 	// Load device app binary
 	appBinary, err := os.ReadFile(appPath)
 	if err != nil {
-		le.Fatalf("Failed to read device app: %v", err)
+		le.Fatalf("Failed to read device app from %s: %v\n\n"+
+			"The device app can be:\n"+
+			"  - Built in ../device-app/ (for development)\n"+
+			"  - Installed to /usr/local/lib/tkey-luks/ (via 'make install' in device-app/)\n"+
+			"  - Specified with --app PATH\n",
+			appPath, err)
 	}
 
 	// Load USS if provided
