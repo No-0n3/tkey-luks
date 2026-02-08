@@ -5,9 +5,9 @@ HOOK_NAME = tkey-luks
 HOOK_SRC = hooks/$(HOOK_NAME)
 HOOK_DEST = /etc/initramfs-tools/hooks/$(HOOK_NAME)
 
-SCRIPT_NAME = tkey-luks
-SCRIPT_SRC = scripts/local-top/$(SCRIPT_NAME)
-SCRIPT_DEST = /etc/initramfs-tools/scripts/local-top/$(SCRIPT_NAME)
+SCRIPT_NAME = 00-tkey-luks
+SCRIPT_SRC = scripts/local-block/$(SCRIPT_NAME)
+SCRIPT_DEST = /etc/initramfs-tools/scripts/local-block/$(SCRIPT_NAME)
 
 .PHONY: all install uninstall update-initramfs check test clean
 

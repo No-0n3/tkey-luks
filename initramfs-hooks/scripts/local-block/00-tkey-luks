@@ -1,9 +1,9 @@
 #!/bin/sh
 # TKey-LUKS unlock script for initramfs
-# This runs during boot in the local-top phase (before cryptroot)
+# This runs during boot in the local-block phase (before cryptroot)
 # It handles LUKS unlocking using TKey hardware device
 
-PREREQ="udev"
+PREREQ=""
 
 prereqs()
 {
