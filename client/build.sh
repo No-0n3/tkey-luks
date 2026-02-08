@@ -16,12 +16,11 @@ go mod verify
 printf "\nBuilding client binary...\n"
 go build -o tkey-luks-client main.go
 
-# Generate SHA-512 hash
-printf "\nGenerating SHA-512 hash...\n"
-sha512sum tkey-luks-client > tkey-luks-client.sha512
-
-printf "\n✓ Build complete\n"
-printf "Binary: tkey-luks-client\n"
-printf "Hash:   tkey-luks-client.sha512\n"
-ls -lh tkey-luks-client
-cat tkey-luks-client.sha512
+# Verifying SHA-512 hash
+printf "\nVerifying SHA-512 hash...\n"
+if [ "$(sha512sum tkey-luks-client)" = "$(cat tkey-luks-client.sha512)" ]; then
+    printf "✓ SHA-512 hash verified\n"
+else
+    printf "✗ SHA-512 verification failed\n"
+    exit 1
+fi

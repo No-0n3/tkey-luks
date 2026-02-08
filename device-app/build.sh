@@ -38,12 +38,11 @@ make -j -C ../submodules/tkey-libs
 printf "\nBuilding device app...\n"
 make -j
 
-# Generate SHA-512 hash
-printf "\nGenerating SHA-512 hash...\n"
-sha512sum tkey-luks-device.bin > tkey-luks-device.bin.sha512
-
-printf "\n✓ Build complete\n"
-printf "Binary: tkey-luks-device.bin\n"
-printf "Hash:   tkey-luks-device.bin.sha512\n"
-ls -lh tkey-luks-device.bin
-cat tkey-luks-device.bin.sha512
+# Verifying SHA-512 hash
+printf "\nVerifying SHA-512 hash...\n"
+if [ "$(sha512sum tkey-luks-device.bin)" = "$(cat tkey-luks-device.bin.sha512)" ]; then
+    printf "✓ SHA-512 hash verified\n"
+else
+    printf "✗ SHA-512 verification failed\n"
+    exit 1
+fi
