@@ -1,5 +1,17 @@
 # Security Considerations for TKey-LUKS
 
+## Security Model Overview
+
+**TKey-LUKS v1.1.0+** uses an **improved USS (User Supplied Secret) derivation** approach that provides defense-in-depth by using your password in two independent cryptographic layers.
+
+### Key Security Features
+
+1. **Password-Derived USS** - USS is derived from your password using PBKDF2, never stored
+2. **Double Password Protection** - Password used in both USS derivation and challenge
+3. **Hardware Root of Trust** - TKey's UDS (Unique Device Secret) cannot be extracted
+4. **Physical Touch Requirement** - Prevents remote/automated attacks
+5. **System-Specific** - Machine-id salt makes USS unique per installation
+
 ## Threat Model
 
 ### What This System Protects Against
@@ -22,7 +34,7 @@
 ### What This System Does NOT Protect Against
 
 1. **Physical Access with TKey Present**
-   - If attacker has both device and TKey, they can boot
+   - If attacker has both device and TKey, they can boot if password is gotten
    - Consider this when storing TKey and device together
 
 2. **Evil Maid Attacks on Bootloader**
@@ -47,35 +59,146 @@
 
 ### Hardware-Based Key Derivation
 
-The TKey device contains unique secrets that cannot be extracted. Keys are derived using:
-- Device serial number (USS - Unique Device Secret)
-- Application-specific secrets
-- Cryptographic operations performed in secure hardware
+**Improved USS Derivation (v1.1.0+):**
+
+The TKey device uses a multi-layer key derivation approach:
+
+#### Layer 1: USS Derivation (Client-Side)
+
+```text
+USS = PBKDF2-HMAC-SHA256(password, machine-id, 100000 iterations, 32 bytes)
+```
+
+- **Input:** User password (never stored)
+- **Salt:** System machine-id (unique per installation)
+- **Iterations:** 100,000 (configurable)
+- **Output:** 32-byte USS (ephemeral, never written to disk)
+
+#### Layer 2: CDI Generation (TKey Firmware)
+
+```text
+CDI = Hash(UDS ⊕ DeviceApp ⊕ USS)
+```
+
+- **UDS:** Unique Device Secret (hardware-embedded, unextractable)
+- **DeviceApp:** Application binary hash
+- **USS:** Password-derived secret from Layer 1
+- **CDI:** Compound Device Identifier (TKey internal state)
+
+#### Layer 3: Key Derivation (Device App)
+
+```text
+secret_key = Ed25519_KeyDerive(CDI)
+LUKS_key = BLAKE2b(key=secret_key, data=password)
+```
+
+- **secret_key:** Derived from CDI (contains USS)
+- **Challenge:** Same password used in Layer 1
+- **LUKS_key:** Final 64-byte encryption key
+
+**Security Properties:**
+
+- Password used in **TWO independent layers** (USS derivation + BLAKE2b challenge)
+- USS never exposed to filesystem or network
+- Device-unique via UDS (cannot emulate without physical TKey)
+- System-unique via machine-id salt
+- Strong KDF prevents brute-force (100k iterations)
+- Physical touch required (prevents automation)
 
 ### Key Derivation Process
 
+**Full Cryptographic Flow:**
+
+```text
+User Input: password
+    ↓
+[Client: PBKDF2]
+    USS = PBKDF2(password, machine-id, 100k)
+    ↓
+[TKey Firmware]
+    CDI = Hash(UDS ⊕ App ⊕ USS)
+    ↓
+[Device App: Ed25519]
+    secret_key = KeyDerive(CDI)
+    ↓
+[Device App: BLAKE2b]
+    LUKS_key = BLAKE2b(key=secret_key, data=password)
+    ↓
+[LUKS Unlock]
+    cryptsetup luksOpen --key-file=<LUKS_key>
 ```
-TKey USS → HMAC/Sign(challenge) → KDF → LUKS Key
-```
 
-1. Client generates or retrieves challenge
-2. TKey signs challenge with device-unique key
-3. Client applies KDF (PBKDF2/HKDF) to signature
-4. Result used as LUKS key
+**Attack Resistance:**
 
-### Rate Limiting
+- Extract disk → No USS (derived from password)
+- Extract USS logic → No password (user knowledge)
+- Steal TKey → No password (user knowledge)
+- Steal TKey + disk → Still need password
+- Password + disk → Still need TKey (UDS)
+- Password + TKey → Still need system (machine-id salt)
 
-- Maximum unlock attempts before lockout
-- Exponential backoff on failures
-- Prevents brute force attempts
+### Physical Touch Requirement
 
-### Audit Logging
-
-- All unlock attempts logged (after successful boot)
-- Failed attempts tracked
-- TKey serial number logged
+- TKey requires physical button press to derive key
+- Each unlock attempt needs user presence
+- Prevents automated/remote attacks
+- Natural rate limiting through physical interaction
 
 ## Best Practices
+
+### Password Selection (USS Derivation)
+
+- **Minimum:** 16 characters (recommended: 20+)
+- **Entropy:** Use passphrase (4-6 random words) or random characters
+- **Avoid:** Dictionary words, personal info, keyboard patterns
+- **Rationale:** Password protects USS derivation + BLAKE2b challenge (double use)
+
+### Physical Security
+
+- Store TKey separately from laptop (reduces theft risk)
+- Use tamper-evident bag for TKey storage
+- Never leave TKey inserted during transport
+- Consider two TKeys (primary + backup with different keyslot)
+
+### System Configuration
+
+- Enable secure boot (prevents initramfs tampering)
+- Set BIOS/UEFI password (prevents boot device changes)
+- Disable USB boot in BIOS (reduces evil maid attacks)
+- Monitor /etc/machine-id integrity (salt changes = USS changes!)
+
+### Migration from Old USS Files
+
+If upgrading from v1.0.x (file-based USS):
+
+```bash
+# 1. Enroll with improved USS derivation (new keyslot)
+echo "password" | sudo tkey-luks-client --derive-uss --challenge-from-stdin \
+  --output - | sudo cryptsetup luksAddKey /dev/sdaX -
+
+# 2. Test new keyslot boots successfully
+sudo update-initramfs -u && reboot
+
+# 3. After confirming boot works, remove old keyslot
+sudo cryptsetup luksKillSlot /dev/sdaX <old-slot-number>
+
+# 4. Delete old USS files
+sudo rm -rf /boot/initramfs-uss/
+```
+
+### Emergency Access Planning
+
+- **Always maintain emergency password keyslot** (independent of TKey)
+- Test emergency password quarterly
+- Store emergency password in secure location (safe, password manager)
+- Document USS derivation parameters (if non-default iterations/salt)
+
+### Operational Security
+
+- USS derivation happens in cleartext memory (choose secure environments for enrollment)
+- Password entry visible to on-lookers (shield keyboard during boot)
+- System logs may contain tkey-luks-client command history (clear bash history after enrollment)
+- Consider hardware security key for emergency keyslot (YubiKey, etc.)
 
 ### Deployment
 
@@ -99,7 +222,7 @@ TKey USS → HMAC/Sign(challenge) → KDF → LUKS Key
    - Disable unnecessary boot devices
    - Consider disabling USB ports except needed ones
 
-### Operational Security
+### Operational Procedures
 
 1. **Key Rotation**
    - Periodically re-enroll TKeys
@@ -118,80 +241,143 @@ TKey USS → HMAC/Sign(challenge) → KDF → LUKS Key
 
 ## Attack Scenarios and Mitigations
 
-### Scenario 1: Stolen Device
+### Scenario 1: Stolen Device with Disk Extraction
 
-**Attack:** Thief steals laptop
-**Mitigation:** TKey required for boot, device remains encrypted
-**Residual Risk:** If TKey also stolen
+**Attack:** Thief steals laptop, extracts disk, attempts USS extraction
+
+**Defense:**
+
+- ❌ OLD: USS stored in /boot/initramfs → Extractable → 3-factor becomes 1-factor!
+- ✅ NEW: USS derived from password → Not stored → Cannot extract
+
+**Mitigation (v1.1.0+):** USS is ephemeral, derived at boot time
+**Residual Risk:** If TKey also stolen AND attacker guesses password
 
 ### Scenario 2: Evil Maid
 
 **Attack:** Attacker modifies bootloader while device unattended
-**Mitigation:** 
+
+**Mitigation:**
+
 - Secure Boot prevents unsigned bootloader
 - TPM-based boot integrity measurements
 - Physical security
 
-### Scenario 3: TKey Replication
+### Scenario 3: Insider Access to Boot Files
+
+**Attack:** Local attacker with root access extracts USS from /boot
+
+**Defense:**
+
+- ❌ OLD: USS file in /boot/initramfs-uss/ → Root access = USS extraction
+- ✅ NEW: No USS files stored → Nothing to extract
+
+**Mitigation (v1.1.0+):** USS derived from password at boot time  
+**Residual Risk:** Root access can install keylogger (use full disk encryption + secure boot)
+
+### Scenario 4: TKey Replication
 
 **Attack:** Attacker attempts to clone TKey
 **Mitigation:** TKey secrets not extractable (hardware security)
 **Residual Risk:** Supply chain attacks on TKey manufacturing
 
-### Scenario 4: USB Sniffing
+### Scenario 5: Software Supply Chain Attack
 
-**Attack:** Intercept communication between client and TKey
-**Mitigation:** 
-- Challenge-response prevents replay
-- Key derived from signature, not transmitted
-- TKey protocol uses secure communication
+**Attack:** Backdoored firmware extraction from initramfs
 
-### Scenario 5: DMA Attack
+**Defense:**
+
+- ❌ OLD: USS in plaintext initramfs → Firmware reads USS file → Key material exposed
+- ✅ NEW: USS derived in memory → No file to backdoor
+
+**Mitigation (v1.1.0+):** USS never touches filesystem  
+**Additional Defense:** Firmware signing, attestation, secure boot  
+**Residual Risk:** Malicious firmware could keylog password (verify firmware hashes!)
+
+### Scenario 6: USB Communication Sniffing
+
+**Attack:** Intercept USB communication between client and TKey
+
+**Mitigation:**
+
+- Challenge-response prevents replay attacks
+- LUKS key derived on TKey, never transmitted
+- USS derived before TKey communication (not sent over USB)
+- Password never sent in plaintext
+
+**Residual Risk:** Physical USB interception still reveals challenge data (but not USS)
+
+### Scenario 7: DMA Attack
 
 **Attack:** Use DMA-capable device to read RAM during boot
+
 **Mitigation:**
+
 - IOMMU protection
 - Disable unnecessary boot-time devices
 - Minimize key lifetime in RAM
 
-### Scenario 6: Firmware Compromise
+**Residual Risk:** Key briefly exists in memory during unlock
+
+### Scenario 8: Firmware Compromise
 
 **Attack:** Compromise system firmware to capture keys
+
 **Mitigation:**
+
 - Use open firmware (coreboot/libreboot) if possible
 - Regular firmware updates
 - Firmware integrity verification
 
 ## Key Management
 
-### Initial Enrollment
+### Initial Enrollment (Improved Method)
 
 ```bash
-# Generate initial LUKS key from TKey
-tkey-luks-enroll /dev/sdaX
-
-# This process:
-# 1. Generates random challenge
-# 2. Stores challenge in LUKS header
-# 3. Derives key from TKey signature
-# 4. Adds key to LUKS keyslot
+# Improved USS derivation (v1.1.0+)
+echo "your-password" | sudo tkey-luks-client \
+  --challenge-from-stdin \
+  --derive-uss \
+  --output - | \
+sudo cryptsetup luksAddKey /dev/sdaX -
 ```
+
+**This process:**
+
+1. Derives USS from password using PBKDF2 (100k iterations)
+2. Loads device app to TKey with derived USS
+3. Waits for physical touch
+4. Derives LUKS key using USS + password (double protection)
+5. Adds key to LUKS keyslot
+
+**Security notes:**
+
+- USS never stored on disk
+- Password used in two independent layers
+- System-specific via machine-id salt
+- TKey touch required (prevents automation)
 
 ### Multiple TKeys
 
 ```bash
-# Add backup TKey to different keyslot
-tkey-luks-enroll --keyslot 1 /dev/sdaX
+# Add backup TKey to different keyslot using same password
+echo "your-password" | sudo tkey-luks-client \
+  --challenge-from-stdin \
+  --derive-uss \
+  --output - | \
+sudo cryptsetup luksAddKey /dev/sdaX - --key-slot 1
 
-# Each TKey gets unique challenge
-# Independent key derivation
+# Note: Use same password for both TKeys for convenience
+# Or use different passwords for defense-in-depth
 ```
 
 ### Emergency Password
 
 ```bash
-# Always maintain password-based keyslot
-cryptsetup luksAddKey /dev/sdaX
+# Always maintain password-based keyslot (independent of TKey)
+sudo cryptsetup luksAddKey /dev/sdaX
+# Enter existing password when prompted
+# Then enter NEW emergency password (different from TKey password)
 ```
 
 ## LUKS Configuration
@@ -255,6 +441,7 @@ cryptsetup luksHeaderBackup /dev/sdaX --header-backup-file header.backup
 ## Responsible Disclosure
 
 If you discover a security vulnerability in this project, please:
+
 1. Do NOT publish details publicly
 2. Contact maintainers privately
 3. Allow reasonable time for fix

@@ -11,24 +11,52 @@ This project provides a secure mechanism to unlock LUKS encrypted root partition
 ## Features
 
 - 🔐 **Hardware-Based Security**: LUKS key derived from TKey device secrets
+- 🔑 **Improved USS Derivation**: Password-derived USS using PBKDF2 (never stored on disk!)
 - 🚀 **Boot Integration**: Seamless integration with initramfs
 - 🔧 **Static Binary**: No dependencies in initramfs environment
-- 🧪 **Test Environment**: QEMU-based testing infrastructure
+- 🧪 **Test Environment**: Hardware and image-based test scripts
 - 📦 **Easy Installation**: Automated installation scripts
 - 🔄 **Fallback Support**: Optional password fallback
 - ✅ **Conventional Commits**: Strict commit standards enforced via CI and git hooks
 
+## Security Highlights
+
+**NEW: Improved USS Derivation** - The User Supplied Secret (USS) is now derived from your password using PBKDF2 instead of being stored in a file. This means:
+
+- ✅ USS is never written to disk or stored in initramfs
+- ✅ Password is used in TWO cryptographic layers (USS + challenge)
+- ✅ Each system has a unique USS (via machine-id salt)
+- ✅ Strong KDF with 100k iterations makes brute-force harder
+- ✅ No extractable secrets from the boot partition
+
+**Why this matters:** Previously, if USS was stored in initramfs, an attacker with physical access could extract it, reducing 3-factor auth to 1-factor. The improved approach keeps USS ephemeral and password-derived.
+
+See [docs/USS-DERIVATION.md](docs/USS-DERIVATION.md) for detailed security analysis.
+
 ## Project Status
 
-✅ **v1.0 Release** - Successfully tested and working on Ubuntu 24.04 Desktop.
+✅ **v1.1.0 Release** - Improved USS Derivation with password-based security!
+
+### Latest Updates (v1.1.0)
+
+- ✅ **Password-Based USS Derivation**: PBKDF2-HMAC-SHA256 with 100k iterations
+- ✅ **No USS Files**: Removed need for USS file storage (ephemeral derivation)
+- ✅ **System-Unique**: Machine-id used as salt for system-specific keys
+- ✅ **Double Protection**: Password used in USS derivation + BLAKE2b challenge
+- ✅ **Backward Compatible**: Old `--uss PATH` still works (with warnings)
+- ✅ **Debian Packaging**: `debian/` kept in-repo for reproducible builds; CI uses it to build packages
+- ✅ **Comprehensive Documentation**: Security analysis, migration guide, setup instructions
+
+**Why keep `debian/` in-repo?** It keeps packaging reproducible, reviewable, and buildable locally with standard debhelper tooling. CI consumes the same files to avoid drift between local and server builds.
 
 ### Tested Systems
 
-- **Ubuntu 24.04 Desktop** - Full boot-time LUKS unlock with TKey
-- Real hardware: NVMe encrypted partitions
-- Boot timing: ~33 seconds total (including user interaction)
+- **Ubuntu 24.04 Desktop** - Full boot-time LUKS unlock with improved USS derivation
+- Real hardware: NVMe encrypted partitions with TKey
+- Boot timing: ~33 seconds total (including physical touch)
+- Test results: USS derivation deterministic, system-specific, secure
 
-See [PLAN.md](PLAN.md) for detailed implementation plan and [STATUS.md](STATUS.md) for development status.
+See [docs/SETUP.md](docs/SETUP.md) for setup instructions and [docs/USS-DERIVATION.md](docs/USS-DERIVATION.md) for security details.
 
 ## Quick Start
 
@@ -92,25 +120,45 @@ Then update initramfs:
 sudo update-initramfs -u -k all
 ```
 
-### Usage
+### Usage (Improved USS Derivation)
 
-1. **At Boot**: System will prompt for challenge phrase
-2. **Enter Challenge**: Type the same challenge phrase you used during enrollment
-3. **Touch TKey**: Press the physical button on the TKey device when it blinks
-4. **Automatic Unlock**: System derives key and unlocks LUKS partition
+**New enrollment process (v1.1.0+):**
 
-**Fallback**: Your original LUKS password still works if TKey is not present.
+```bash
+# Enroll with improved USS derivation (recommended)
+echo "YourPassword" | sudo tkey-luks-client \
+  --challenge-from-stdin \
+  --derive-uss \
+  --output - | \
+sudo cryptsetup luksAddKey /dev/sdXY -
+```
+
+**At Boot:**
+
+1. System prompts for password
+2. USS derived from password using PBKDF2 (never stored!)
+3. Touch TKey when it blinks (physical authentication)
+4. System derives LUKS key and unlocks automatically
+
+**Double protection:** Your password is used in both USS derivation AND the BLAKE2b challenge, providing two independent cryptographic layers.
+
+**Fallback**: Emergency LUKS password still works if TKey is not present.
 
 ### Testing
 
 ```bash
-# Test in a VM first (recommended)
-./test/qemu/create-vm.sh
-./test/qemu/run-vm.sh
+# Test USS derivation unit tests
+cd test
+./test-uss-derivation.sh
 
-# Test key derivation on running system
-cd client
-./tkey-luks-client --challenge "YourChallengePhrase"
+# Test with real TKey hardware
+./test-improved-uss.sh
+
+# Test LUKS image creation and unlock
+cd test/luks-setup
+./create-tkey-test-image.sh
+./add-tkey-key.sh
+./test-unlock.sh
 ```
 
 ## Architecture
@@ -121,7 +169,7 @@ The system consists of three main components:
 2. **Client Application**: Runs in initramfs, communicates with TKey
 3. **initramfs Hooks**: Integration with boot process
 
-```
+```text
 [initramfs] → [Client Binary] → [USB] → [TKey Device App]
      ↓              ↓                         ↓
 [Derived Key] → [cryptsetup] → [Unlock LUKS]
@@ -129,8 +177,6 @@ The system consists of three main components:
 
 ## Documentation
 
-- [PLAN.md](PLAN.md) - Detailed implementation plan
-- [STATUS.md](STATUS.md) - Current development status
 - [docs/SETUP.md](docs/SETUP.md) - Setup and installation guide  
 - [docs/TESTING.md](docs/TESTING.md) - Testing procedures
 - [docs/SECURITY.md](docs/SECURITY.md) - Security considerations
@@ -143,26 +189,47 @@ The TKey-LUKS unlock happens early in boot:
 1. **2s**: Script starts, TKey detected at `/dev/ttyACM0`
 2. **14s**: User enters challenge phrase
 3. **13s**: Key derivation on TKey (Blake2b, 64 bytes)
-4. Troubleshooting
+
+## Troubleshooting
 
 ### TKey not detected at boot
+
 - Check USB connection and power
 - Verify `cdc-acm` module loaded: `lsmod | grep cdc_acm`
 - Check initramfs contents: `lsinitramfs /boot/initrd.img-$(uname -r) | grep tkey`
 
 ### Script not running
+
 - Verify `initramfs` option in `/etc/crypttab` (required for Ubuntu 24.04)
 - Rebuild initramfs: `sudo update-initramfs -u -k all`
 - Check dmesg after boot: `dmesg | grep tkey-luks`
 
 ### Wrong crypttab path
+
 - Initramfs uses `/cryptroot/crypttab`, not `/etc/crypttab`
 - Script automatically reads from correct location
 
 ### Key derivation fails
+
 - Ensure TKey button pressed when device blinks
-- Verify challenge phrase matches enrollment
-- Check TKey device app loaded correctly
+- Verify password matches enrollment
+- Check TKey device app loaded correctly: `dmesg | grep tkey`
+- For improved USS: Ensure system machine-id hasn't changed
+
+### USS derivation issues
+
+If upgrading from v1.0.x (file-based USS) to v1.1.0 (improved USS):
+
+- Old `--uss PATH` still works (with deprecation warning)
+- Enroll new keyslot with `--derive-uss` before removing old one
+- Test new keyslot boots successfully before removing old
+- See [docs/USS-DERIVATION.md](docs/USS-DERIVATION.md) for migration guide
+
+### Password not working
+
+- Different from v1.0: Password affects **both** USS derivation and BLAKE2b
+- Same password must be used at boot and enrollment
+- System-specific: Machine-id used as salt (moving disk to new system requires re-enrollment)
 
 ## License
 
@@ -176,7 +243,7 @@ Contributions welcome! This project strictly follows [Conventional Commits](http
 
 All commits **must** follow this specification:
 
-```
+```text
 <type>(<scope>): <description>
 
 [optional body]
@@ -185,6 +252,7 @@ All commits **must** follow this specification:
 ```
 
 **Standard Types**:
+
 - `feat`: A new feature for users
 - `fix`: A bug fix for users
 - `docs`: Documentation changes only
@@ -197,7 +265,8 @@ All commits **must** follow this specification:
 - `chore`: Other changes that don't modify src or test files
 
 **Examples**:
-```
+
+```text
 feat(client): add timeout configuration for TKey detection
 fix(initramfs): resolve race condition in device detection
 docs: update Ubuntu 24.04 installation guide
@@ -219,6 +288,7 @@ npm install
 ```
 
 **What happens:** The commit-msg hook validates your message before the commit is created.
+
 - ✅ Valid messages: commit proceeds normally
 - ❌ Invalid messages: commit is rejected with helpful error messages
 
@@ -248,24 +318,19 @@ npx commitlint --from HEAD~5
 #### 🚀 CI/CD Validation
 
 GitHub Actions automatically validates:
+
 - **Push events**: Last commit message
 - **Pull requests**: All commits in the PR
 
 **Result**: PRs with invalid commits will fail CI checks and cannot be merged.
+
 This system provides security against:
+
 - Unauthorized boot of stolen devices
 - Cold boot attacks (limited)
 - Software-only attacks on LUKS keys
 
 See [docs/SECURITY.md](docs/SECURITY.md) for full threat model and considerations.
-
-## License
-
-This project is licensed under the BSD-2-Clause License - see the [LICENSE](LICENSE) file for details.
-
-## Contributing
-
-Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## Acknowledgments
 

@@ -2,565 +2,555 @@
 
 ## Overview
 
-This guide covers testing procedures for the TKey-LUKS system, from unit tests to full integration testing with QEMU.
+This guide covers testing procedures for the TKey-LUKS system with improved USS derivation.
 
-## Test Environment Setup
+## Test Structure
 
-### Quick Start
-
-```bash
-# Set up complete test environment
-cd test/qemu
-./create-vm.sh
-
-# Run basic test
-./run-vm.sh
+```text
+test/
+├── README.md                     # Test documentation
+├── test-improved-uss.sh          # Live USS derivation test with TKey
+├── test-tkey-unlock.sh           # Full unlock test with TKey
+├── test-uss-derivation.sh        # USS derivation demo (no TKey needed)
+└── luks-setup/                   # LUKS test image tools
+    ├── create-tkey-test-image.sh # Create test LUKS image
+    ├── add-tkey-key.sh           # Add TKey key to existing LUKS
+    ├── test-unlock.sh            # Test unlock with image
+    └── README.md                 # LUKS setup documentation
 ```
 
-### Manual Setup
+## Prerequisites
 
-#### 1. Install Test Dependencies
+### Hardware Requirements
+
+- Tillitis TKey hardware device (for hardware tests)
+- USB port for TKey connection
+- x86_64 Linux system
+
+### Software Requirements
+
+- Linux kernel 5.x or later (with LUKS support)
+- cryptsetup
+- Go 1.21+ (for building client)
+- LLVM/Clang 15+ with riscv32 support (for building device app)
+
+## Quick Start
+
+### Build Everything
 
 ```bash
-# Debian/Ubuntu
-sudo apt-get install qemu-system-x86 qemu-utils \
-    debootstrap cryptsetup e2fsprogs \
-    ovmf # for UEFI testing
-
-# Fedora/RHEL
-sudo dnf install qemu-system-x86 qemu-img \
-    cryptsetup e2fsprogs edk2-ovmf
+# Build client and device app
+./scripts/build-all.sh
 ```
 
-#### 2. Create Test Image
+### Run USS Derivation Test (No Hardware Needed)
 
 ```bash
-cd test/luks-setup
-./create-test-image.sh
+cd test
+./test-uss-derivation.sh
 ```
 
-This creates:
-- LUKS encrypted disk image
-- Minimal bootable root filesystem
-- Test GRUB configuration
-- Enrolled test TKey
+This demonstrates:
+
+- System salt detection (machine-id)
+- USS derivation from password
+- PBKDF2 parameter effects
+- Deterministic output verification
+
+### Run Live TKey Tests (Hardware Required)
+
+```bash
+cd test
+
+# Test 1: USS derivation with real TKey
+./test-improved-uss.sh
+
+# Test 2: Full unlock scenario
+./test-tkey-unlock.sh
+```
+
+What these test:
+
+- TKey device detection
+- Device app loading
+- USS derivation from password
+- Physical touch requirement
+- Key derivation and signing
+- Full LUKS unlock workflow
 
 ## Test Categories
 
-### 1. Unit Tests
+### 1. USS Derivation Tests
 
-#### Device Application Tests
+#### Software-Only Test (No TKey)
 
 ```bash
-cd device-app
-make test
-
-# Test key derivation
-./test/test-key-derivation
-
-# Test TKey communication
-./test/test-tkey-comm
+cd test
+./test-uss-derivation.sh
 ```
 
-#### Client Application Tests
+Tests:
+
+- Machine-id salt detection
+- PBKDF2 USS derivation
+- Deterministic output
+- Custom salt support
+- Iteration count effects
+
+#### Hardware USS Test (With TKey)
+
+```bash
+cd test
+./test-improved-uss.sh
+```
+
+Tests:
+
+- TKey detection at /dev/ttyACM0
+- Device app loading with USS
+- Touch sensor activation
+- Key derivation with USS
+- Multiple unlock attempts
+
+### 2. Full Integration Tests
+
+#### Complete Unlock Test
+
+```bash
+cd test
+./test-tkey-unlock.sh
+```
+
+Tests:
+
+1. TKey detection
+2. USS derivation (PBKDF2)
+3. Device app loading
+4. Touch requirement
+5. Key derivation (BLAKE2b)
+6. LUKS image creation
+7. Keyslot enrollment
+8. Successful unlock
+
+### 3. LUKS Image Tests
+
+#### Create Test Image
+
+```bash
+cd test/luks-setup
+./create-tkey-test-image.sh test.img 100M mypassword
+```
+
+Creates:
+
+- 100MB LUKS2 encrypted image
+- Ext4 filesystem inside
+- Initialized with password
+- Ready for TKey enrollment
+
+#### Add TKey to Existing Image
+
+```bash
+cd test/luks-setup
+./add-tkey-key.sh test.img mypassword
+```
+
+Process:
+
+1. Derives USS from password
+2. Loads TKey device app
+3. Waits for touch
+4. Derives LUKS key
+5. Adds to keyslot
+
+#### Test Unlock
+
+```bash
+cd test/luks-setup
+./test-unlock.sh test.img mypassword
+```
+
+Tests unlocking with:
+
+- TKey hardware
+- USS derivation
+- Physical touch
+- Successful mount
+
+### 4. Go Unit Tests
 
 ```bash
 cd client
 make test
-
-# Test USB communication
-./test/test-usb
-
-# Test key derivation
-./test/test-kdf
-
-# Test cryptsetup integration
-./test/test-cryptsetup
 ```
 
-### 2. Integration Tests
+Runs Go unit tests for:
 
-#### Full Boot Test
+- USS derivation functions
+- System salt detection
+- PBKDF2 parameters
+- Command-line parsing
+- Error handling
 
-```bash
-cd test/integration
-./test-boot.sh
-
-# What it tests:
-# - TKey detection in initramfs
-# - Client-device communication
-# - Key derivation
-# - LUKS unlock
-# - Successful boot
-```
-
-#### Error Scenario Tests
-
-```bash
-# Test missing TKey
-./test-boot.sh --no-tkey
-
-# Test wrong TKey
-./test-boot.sh --wrong-tkey
-
-# Test USB errors
-./test-boot.sh --usb-error
-
-# Test timeout scenarios
-./test-boot.sh --timeout
-```
-
-### 3. QEMU VM Testing
-
-#### Basic Boot Test
-
-```bash
-cd test/qemu
-./run-vm.sh
-
-# Expected output:
-# - GRUB menu appears
-# - Kernel boots
-# - initramfs starts
-# - TKey detected
-# - LUKS unlocked
-# - System boots to login
-```
-
-#### Advanced QEMU Options
-
-```bash
-# Boot with console output
-./run-vm.sh --console
-
-# Boot with debugging
-./run-vm.sh --debug
-
-# Boot with specific TKey device
-./run-vm.sh --tkey-device /dev/ttyACM0
-
-# UEFI boot (Secure Boot testing)
-./run-vm.sh --uefi
-
-# Snapshot and restore testing
-./run-vm.sh --snapshot test1
-./run-vm.sh --restore test1
-```
-
-### 4. Performance Tests
-
-```bash
-cd test/integration
-./test-performance.sh
-
-# Metrics tested:
-# - Boot time impact
-# - TKey communication latency
-# - Key derivation time
-# - Total unlock time
-```
-
-### 5. Security Tests
-
-```bash
-cd test/integration
-./test-security.sh
-
-# Tests:
-# - Rate limiting
-# - Failed attempt handling
-# - Key material not leaked
-# - Secure memory handling
-```
+Note: Currently basic - most testing is integration-based due to hardware dependency.
 
 ## Test Scenarios
 
-### Scenario 1: Happy Path
+### Scenario 1: Basic USS Derivation
 
-**Setup:**
-- Valid TKey enrolled
-- TKey connected via USB
-- Normal boot
+Goal: Verify USS derivation works correctly
 
-**Expected Result:**
-- System boots automatically
-- No user interaction required
-- Boot time < 30 seconds
-
-**Test:**
 ```bash
-./test/integration/test-scenario-1-happy-path.sh
+cd test
+./test-uss-derivation.sh
 ```
 
-### Scenario 2: Missing TKey
+Validates:
 
-**Setup:**
-- TKey not connected
-- Fallback enabled
+- System salt detection
+- PBKDF2 with 100k iterations
+- Deterministic output
+- 32-byte USS length
+- Different passwords produce different USS
 
-**Expected Result:**
-- System detects missing TKey
-- Falls back to password prompt
-- User can enter password
+### Scenario 2: TKey Hardware Detection
 
-**Test:**
+Goal: Verify TKey is detected and accessible
+
 ```bash
-./test/integration/test-scenario-2-missing-tkey.sh
+# Manual check
+ls -la /dev/ttyACM*
+lsusb | grep Tillitis
+
+# Automated test
+cd test
+./test-improved-uss.sh
 ```
 
-### Scenario 3: Wrong TKey
+Validates:
 
-**Setup:**
-- Different TKey connected
-- Not enrolled with this system
+- USB device enumeration
+- Serial port creation
+- Device permissions
+- Communication channel
 
-**Expected Result:**
-- Unlock fails
-- Error message displayed
-- Fallback to password (if enabled)
-- Or retry prompt
+### Scenario 3: Device App Loading
 
-**Test:**
+Goal: Verify device app loads with USS
+
 ```bash
-./test/integration/test-scenario-3-wrong-tkey.sh
+cd test
+./test-improved-uss.sh
 ```
 
-### Scenario 4: USB Communication Error
+Validates:
 
-**Setup:**
-- TKey connected but communication fails
-- Simulated USB error
+- USS derivation before loading
+- Device app binary valid
+- TKey accepts app
+- CDI generation with USS
+- App ready for signing
 
-**Expected Result:**
-- Timeout after configured period
-- Error message
-- Retry or fallback
+### Scenario 4: Physical Touch Requirement
 
-**Test:**
+Goal: Verify touch sensor works
+
 ```bash
-./test/integration/test-scenario-4-usb-error.sh
+cd test
+./test-improved-uss.sh
+# Press TKey button when prompted
 ```
 
-### Scenario 5: Multiple TKeys
+Validates:
 
-**Setup:**
-- Two TKeys enrolled
-- Test with each TKey
+- Touch prompt displayed
+- 30-second timeout
+- Touch detection
+- Signing proceeds after touch
+- No signing without touch
 
-**Expected Result:**
-- Either TKey successfully unlocks
-- No preference needed
+### Scenario 5: Key Derivation
 
-**Test:**
+Goal: Verify full key derivation chain
+
 ```bash
-./test/integration/test-scenario-5-multiple-tkeys.sh
+cd test
+./test-tkey-unlock.sh
 ```
 
-### Scenario 6: Rate Limiting
+Validates:
 
-**Setup:**
-- Make multiple failed unlock attempts
+- USS = PBKDF2(password, machine-id, 100k)
+- CDI = Hash(UDS xor App xor USS)
+- secret_key = Ed25519_KeyDerive(CDI)
+- LUKS_key = BLAKE2b(key=secret_key, data=password)
+- 64-byte LUKS key output
 
-**Expected Result:**
-- After N attempts, lockout imposed
-- Exponential backoff
-- Eventually allows retry
+### Scenario 6: LUKS Unlock
 
-**Test:**
+Goal: Verify LUKS unlock works end-to-end
+
 ```bash
-./test/integration/test-scenario-6-rate-limiting.sh
+cd test/luks-setup
+./create-tkey-test-image.sh test.img 100M testpass
+./test-unlock.sh test.img testpass
 ```
 
-## QEMU VM Details
+Validates:
 
-### VM Configuration
+- Image creation
+- TKey enrollment
+- Key derivation
+- Keyslot unlock
+- Filesystem mount
+- Read/write access
 
-**Specifications:**
-- RAM: 2GB
-- CPUs: 2
-- Disk: 10GB (LUKS encrypted)
-- Network: User-mode NAT
-- USB: QEMU USB controller with TKey passthrough
+### Scenario 7: Deterministic Keys
 
-**Files:**
-- `vm-disk.qcow2` - Main disk image
-- `vm-config.xml` - VM configuration
-- `grub.cfg` - GRUB configuration
-- `initramfs.img` - Custom initramfs with tkey-luks
-
-### Creating Test VM from Scratch
+Goal: Verify same password produces the same key
 
 ```bash
-cd test/qemu
-
-# Step 1: Create disk image
-qemu-img create -f qcow2 vm-disk.qcow2 10G
-
-# Step 2: Set up LUKS encryption
-./setup-luks.sh vm-disk.qcow2
-
-# Step 3: Install minimal system
-./install-system.sh vm-disk.qcow2
-
-# Step 4: Install tkey-luks
-./install-tkey-luks.sh vm-disk.qcow2
-
-# Step 5: Enroll TKey
-./enroll-tkey.sh vm-disk.qcow2
-
-# Or use the all-in-one script:
-./create-vm.sh
+cd test
+./test-tkey-unlock.sh
 ```
 
-### Debugging VM Boot
+Validates:
+
+- Multiple derives produce same USS
+- Same USS produces same CDI
+- Same challenge produces same LUKS key
+- Reproducible unlocks
+
+### Scenario 8: Password Variation
+
+Goal: Verify different passwords produce different keys
 
 ```bash
-# Boot with serial console
-./run-vm.sh --serial
-
-# Boot with VNC display
-./run-vm.sh --vnc :1
-
-# Boot with GDB debugging
-./run-vm.sh --gdb 1234
-
-# Boot with detailed logging
-./run-vm.sh --debug --log vm-boot.log
+cd test
+echo "password1" | ./tkey-luks-client --challenge-from-stdin --derive-uss --output key1.bin
+echo "password2" | ./tkey-luks-client --challenge-from-stdin --derive-uss --output key2.bin
+cmp key1.bin key2.bin && echo "FAIL: Keys match" || echo "PASS: Keys differ"
 ```
 
-### Accessing VM Console
+Validates:
+
+- Different USS from different passwords
+- Different LUKS keys
+- No key collisions
+
+## Manual Testing
+
+### Test USS Derivation Manually
 
 ```bash
-# Via QEMU monitor
-# Press Ctrl+Alt+2 to access monitor
-# Type 'info usb' to see USB devices
+cd client
 
-# Via serial console
-screen /dev/pts/X 115200
-
-# Via SSH (if network configured)
-ssh -p 2222 root@localhost
-```
-
-## Test Data and Fixtures
-
-### Test TKey Configuration
-
-```bash
-# Test challenge stored in header
-test/fixtures/test-challenge.bin
-
-# Test device application
-test/fixtures/test-device-app.bin
-
-# Expected signature output
-test/fixtures/test-signature.bin
-```
-
-### Mock TKey Device
-
-For testing without hardware:
-
-```bash
-# Build mock TKey device
-cd test/mock-tkey
+# Build
 make
 
-# Run tests with mock device
-export TKEY_MOCK=1
-./test/integration/test-boot.sh
+# Derive USS from password
+echo "my-password" | ./tkey-luks-client \
+  --challenge-from-stdin \
+  --derive-uss \
+  --verbose \
+  --output test-uss.bin
+
+# Check output
+hexdump -C test-uss.bin | head -3
+
+# Verify deterministic
+echo "my-password" | ./tkey-luks-client \
+  --challenge-from-stdin \
+  --derive-uss \
+  --output test-uss2.bin
+
+cmp test-uss.bin test-uss2.bin && echo "Deterministic" || echo "Non-deterministic"
+
+# Cleanup
+rm test-uss*.bin
+```
+
+### Test Full Unlock Manually
+
+```bash
+# 1. Create test image
+cd test/luks-setup
+./create-tkey-test-image.sh /tmp/test.img 100M mypassword
+
+# 2. Enroll TKey
+echo "mypassword" | sudo ../../client/tkey-luks-client \
+  --challenge-from-stdin \
+  --derive-uss \
+  --output - | \
+sudo cryptsetup luksAddKey /tmp/test.img -
+
+# 3. Test unlock
+echo "mypassword" | sudo ../../client/tkey-luks-client \
+  --challenge-from-stdin \
+  --derive-uss \
+  --output - | \
+sudo cryptsetup luksOpen /tmp/test.img test-mapper --key-file=-
+
+# 4. Verify
+ls -la /dev/mapper/test-mapper
+sudo mount /dev/mapper/test-mapper /mnt
+ls -la /mnt
+
+# 5. Cleanup
+sudo umount /mnt
+sudo cryptsetup luksClose test-mapper
+rm /tmp/test.img
+```
+
+## Troubleshooting Tests
+
+### TKey Not Detected
+
+Problem: No /dev/ttyACM0 device
+
+Solutions:
+
+```bash
+# Check USB
+lsusb | grep Tillitis
+
+# Check kernel messages
+dmesg | grep -i tkey
+dmesg | grep cdc_acm
+
+# Check permissions
+ls -la /dev/ttyACM*
+sudo usermod -a -G dialout $USER
+# Log out and back in
+```
+
+### Device App Load Fails
+
+Problem: TKey rejects device app
+
+Solutions:
+
+```bash
+# Rebuild device app
+cd device-app
+make clean && make
+
+# Check binary size (must be < 100KB)
+ls -lh tkey-luks-device.bin
+
+# Verify hash
+make verify
+```
+
+### USS Derivation Fails
+
+Problem: No machine-id found
+
+Solutions:
+
+```bash
+# Check machine-id exists
+cat /etc/machine-id || cat /var/lib/dbus/machine-id
+
+# Generate if missing (Ubuntu/Debian)
+sudo systemd-machine-id-setup
+
+# Or use custom salt
+echo "mypass" | ./tkey-luks-client \
+  --challenge-from-stdin \
+  --derive-uss \
+  --salt "custom-salt-value" \
+  --output test.bin
+```
+
+### Touch Timeout
+
+Problem: Test fails waiting for touch
+
+Solutions:
+
+- Press button within 30 seconds
+- Check TKey LED is flashing
+- Try reconnecting TKey
+- Check USB cable quality
+
+### Tests Hang
+
+Problem: Test script hangs indefinitely
+
+Solutions:
+
+```bash
+# Kill stuck processes
+pkill -f tkey-luks-client
+
+# Power cycle TKey (unplug/replug)
+# Note: TKey loads one app per power cycle
+
+# Run with timeout
+timeout 60 ./test-improved-uss.sh
 ```
 
 ## Continuous Integration
 
-### GitHub Actions Workflow
+Current CI setup (GitHub Actions):
 
-```yaml
-# .github/workflows/test.yml
-name: Test
+- Build verification
+- Basic compilation tests
+- Static analysis
 
-on: [push, pull_request]
+Note: Hardware tests are not automated in CI due to hardware dependency.
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-        with:
-          submodules: recursive
-      
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential \
-            qemu-system-x86 cryptsetup
-      
-      - name: Build
-        run: ./scripts/build-all.sh
-      
-      - name: Unit tests
-        run: make test
-      
-      - name: Integration tests
-        run: ./test/integration/test-all.sh
-```
+## Adding New Tests
 
-## Test Checklist
+### Adding a Test Script
 
-Before release:
+1. Create script in test/
+2. Make executable: chmod +x test/test-new.sh
+3. Follow existing script patterns
+4. Document in this file
 
-- [ ] All unit tests pass
-- [ ] Integration tests pass
-- [ ] QEMU boot test succeeds
-- [ ] All error scenarios handled
-- [ ] Performance metrics acceptable
-- [ ] Security tests pass
-- [ ] Documentation updated
-- [ ] Test coverage > 80%
-
-## Troubleshooting Tests
-
-### TKey Not Detected in VM
-
-**Symptom:** TKey device not visible in QEMU VM
-
-**Solutions:**
-```bash
-# Check USB passthrough
-lsusb | grep Tillitis
-
-# Verify QEMU USB configuration
-./run-vm.sh --show-usb
-
-# Try different USB controller
-./run-vm.sh --usb-controller ehci
-
-# Check permissions
-ls -la /dev/ttyACM*
-```
-
-### Boot Hangs at initramfs
-
-**Symptom:** VM hangs at "Waiting for TKey..."
-
-**Solutions:**
-```bash
-# Boot with debug output
-./run-vm.sh --debug
-
-# Check initramfs logs
-./run-vm.sh --shell  # Drop to initramfs shell
-cat /run/initramfs/tkey-luks.log
-
-# Verify TKey enrollment
-cryptsetup luksDump /dev/vda1
-```
-
-### Tests Fail Intermittently
-
-**Symptom:** Tests pass sometimes, fail others
-
-**Likely Causes:**
-- Race conditions in boot process
-- USB timing issues
-- Insufficient VM resources
-
-**Solutions:**
-```bash
-# Increase timeouts
-export TKEY_TIMEOUT=60
-
-# Allocate more VM RAM
-./run-vm.sh --memory 4G
-
-# Run with fixed random seed
-export RANDOM_SEED=12345
-```
-
-## Writing New Tests
-
-### Unit Test Template
-
-```c
-// test/test-template.c
-#include "unity.h"
-#include "../src/tkey-luks.h"
-
-void setUp(void) {
-    // Run before each test
-}
-
-void tearDown(void) {
-    // Run after each test
-}
-
-void test_feature_works(void) {
-    // Arrange
-    int result;
-    
-    // Act
-    result = my_function();
-    
-    // Assert
-    TEST_ASSERT_EQUAL(EXPECTED_VALUE, result);
-}
-
-int main(void) {
-    UNITY_BEGIN();
-    RUN_TEST(test_feature_works);
-    return UNITY_END();
-}
-```
-
-### Integration Test Template
+### Test Script Template
 
 ```bash
 #!/bin/bash
-# test/integration/test-template.sh
+# Test: Description of what this tests
 
 set -e
 
-# Setup
-TEST_NAME="Feature Test"
-echo "Running $TEST_NAME..."
+echo "=== Test Name ==="
+echo ""
 
-# Create test environment
-./setup-test-env.sh
-
-# Run test
-./run-vm.sh --test-mode &
-VM_PID=$!
-
-# Wait for result
-sleep 30
-
-# Check result
-if check_vm_booted; then
-    echo "$TEST_NAME: PASS"
-    exit 0
-else
-    echo "$TEST_NAME: FAIL"
+# Check prerequisites
+if [ ! -f "../client/tkey-luks-client" ]; then
+    echo "Error: Client not built"
     exit 1
 fi
-```
 
-## Test Reports
-
-Generate test reports:
-
-```bash
-# HTML report
-./test/generate-report.sh --format html
-
-# JUnit XML (for CI)
-./test/generate-report.sh --format junit
-
-# Coverage report
-./test/generate-coverage.sh
-```
-
-## References
-
-- QEMU Documentation: https://www.qemu.org/docs/master/
-- cryptsetup Testing: https://gitlab.com/cryptsetup/cryptsetup/-/wikis/testing
-- initramfs Debugging: https://wiki.debian.org/InitramfsDebug
+# Run test
+echo "Running test..."
++# ... test logic ...
++
++echo "Test passed"
++```
++
++## Test Coverage
++
++Current test coverage:
++- USS derivation (PBKDF2)
++- System salt detection
++- TKey communication
++- Device app loading
++- Touch requirement
++- Key derivation
++- LUKS unlock
++- Error scenarios (partial)
++- Edge cases (partial)
++- Unit tests (minimal)
++
++## See Also
++
++- [test/README.md](../test/README.md) - Test directory documentation
++- [test/luks-setup/README.md](../test/luks-setup/README.md) - LUKS test image setup
++- [SETUP.md](SETUP.md) - System setup and installation
++- [USS-DERIVATION.md](USS-DERIVATION.md) - USS security analysis

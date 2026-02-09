@@ -3,11 +3,13 @@
 ## Prerequisites
 
 ### Hardware
+
 - Tillitis TKey hardware device
 - x86_64 Linux system
 - USB port
 
 ### Software
+
 - Linux kernel 5.x or later (with LUKS support)
 - initramfs-tools (Debian/Ubuntu) or dracut (Fedora/RHEL)
 - cryptsetup
@@ -17,6 +19,7 @@
 - QEMU (for testing)
 
 ### Optional
+
 - tkey-runapp (from tkey-devtools, for testing device apps)
 - QEMU emulator with TKey support (for development without hardware)
 - Podman/Docker (for using tkey-builder container)
@@ -37,6 +40,7 @@ cd tkey-luks
 ```
 
 This will:
+
 - Install system dependencies
 - Initialize git submodules
 - Create build directories
@@ -62,7 +66,8 @@ git submodule update --init --recursive
 ```
 
 Expected repositories:
-- `tkey-libs`: https://github.com/tillitis/tkey-libs
+
+- `tkey-libs`: <https://github.com/tillitis/tkey-libs>
 - `tkey-sign`: Check Tillitis GitHub for correct URL
 - `tkey-device-signer`: Part of Tillitis SDK
 
@@ -75,6 +80,7 @@ Expected repositories:
 ```
 
 This builds:
+
 1. Device application (runs on TKey)
 2. Client application (runs in initramfs)
 
@@ -95,8 +101,8 @@ make
 Check that client is statically linked:
 
 ```bash
-file client/tkey-luks-unlock
-ldd client/tkey-luks-unlock
+file client/tkey-luks-client
+ldd client/tkey-luks-client
 ```
 
 Expected output: "statically linked" or "not a dynamic executable"
@@ -110,24 +116,25 @@ sudo ./scripts/install.sh
 ```
 
 This installs:
-- Client binary to `/usr/lib/tkey-luks/`
-- Device app to `/usr/lib/tkey-luks/`
-- initramfs hooks to `/usr/share/initramfs-tools/hooks/`
-- Boot scripts to `/usr/share/initramfs-tools/scripts/local-top/`
+
+- Client binary to `/usr/local/bin/`
+- Device app to `/usr/local/lib/tkey-luks/`
+- initramfs hooks to `/etc/initramfs-tools/hooks/`
+- Boot scripts to `/etc/initramfs-tools/scripts/local-top/`
 - Configuration to `/etc/tkey-luks/`
 
 ### Manual Installation
 
 ```bash
 # Install binary
-sudo install -D -m 755 client/tkey-luks-unlock /usr/lib/tkey-luks/tkey-luks-unlock
+sudo install -D -m 755 client/tkey-luks-client /usr/local/bin/tkey-luks-client
 
 # Install device app
-sudo install -D -m 644 device-app/tkey-luks-device.bin /usr/lib/tkey-luks/
+sudo install -D -m 644 device-app/tkey-luks-device.bin /usr/local/lib/tkey-luks/
 
 # Copy initramfs hooks
-sudo cp -r initramfs-hooks/hooks/* /usr/share/initramfs-tools/hooks/
-sudo cp -r initramfs-hooks/scripts/* /usr/share/initramfs-tools/scripts/
+sudo cp -r initramfs-hooks/hooks/* /etc/initramfs-tools/hooks/
+sudo cp -r initramfs-hooks/scripts/* /etc/initramfs-tools/scripts/
 
 # Update initramfs
 sudo update-initramfs -u
@@ -135,38 +142,132 @@ sudo update-initramfs -u
 
 ## TKey Enrollment
 
-### Enroll TKey with LUKS Partition
+### Important: Improved USS Derivation (Recommended)
+
+**TKey-LUKS v1.1.0+ uses improved USS (User Supplied Secret) derivation** from your password using PBKDF2. This provides significantly better security:
+
+✅ **Benefits:**
+
+- USS is **never stored** on disk or in initramfs
+- Password used in **TWO cryptographic layers**
+- System-specific via machine-id salt
+- 100,000 PBKDF2 iterations
+- Defense against disk extraction attacks
+
+See [USS-DERIVATION.md](USS-DERIVATION.md) for full security analysis.
+
+### Enroll TKey with LUKS Partition (Improved Method)
 
 ```bash
-# Basic enrollment
-sudo tkey-luks-enroll /dev/sdaX
+# Recommended: Use --derive-uss for improved security
+echo "your-password" | sudo tkey-luks-client \
+  --challenge-from-stdin \
+  --derive-uss \
+  --output - | \
+sudo cryptsetup luksAddKey /dev/sdaX -
 
-# Specify keyslot
-sudo tkey-luks-enroll --keyslot 0 /dev/sdaX
+# You'll be prompted for an existing LUKS password first
+```
 
-# Enroll with challenge
-sudo tkey-luks-enroll --challenge-file challenge.bin /dev/sdaX
+**What this does:**
+
+1. Derives USS from your password using PBKDF2 (100k iterations)
+2. Loads device app to TKey with derived USS
+3. TKey derives key using USS + password (double protection)
+4. Adds the derived key to LUKS keyslot
+
+### Advanced Enrollment Options
+
+```bash
+# Use custom salt (optional - system salt is recommended)
+echo "your-password" | sudo tkey-luks-client \
+  --challenge-from-stdin \
+  --derive-uss \
+  --salt custom-salt-value \
+  --output - | \
+sudo cryptsetup luksAddKey /dev/sdaX -
+
+# Increase PBKDF2 iterations for stronger security (slower boot)
+echo "your-password" | sudo tkey-luks-client \
+  --challenge-from-stdin \
+  --derive-uss \
+  --pbkdf2-iterations 200000 \
+  --output - | \
+sudo cryptsetup luksAddKey /dev/sdaX -
+
+# Use different password for USS vs challenge (not recommended)
+sudo tkey-luks-client \
+  --uss-password "uss-secret" \
+  --challenge "challenge-secret" \
+  --derive-uss \
+  --output - | \
+sudo cryptsetup luksAddKey /dev/sdaX -
 ```
 
 ### Enroll Multiple TKeys
 
 ```bash
 # Primary TKey (keyslot 0)
-sudo tkey-luks-enroll --keyslot 0 /dev/sdaX
+# Use same password for both TKeys
+echo "your-password" | sudo tkey-luks-client \
+  --challenge-from-stdin \
+  --derive-uss \
+  --output - | \
+sudo cryptsetup luksAddKey /dev/sdaX - --key-slot 0
 
 # Backup TKey (keyslot 1)
-# Connect different TKey, then:
-sudo tkey-luks-enroll --keyslot 1 /dev/sdaX
+# Connect different TKey with same password
+echo "your-password" | sudo tkey-luks-client \
+  --challenge-from-stdin \
+  --derive-uss \
+  --output - | \
+sudo cryptsetup luksAddKey /dev/sdaX - --key-slot 1
 ```
 
 ### Maintain Emergency Password
 
-Always keep a password-based keyslot:
+**CRITICAL:** Always keep a password-based keyslot for emergency recovery:
 
 ```bash
-# Add password to keyslot 7  
+# Add emergency password to keyslot 7  
 sudo cryptsetup luksAddKey /dev/sdaX
-# Enter existing key, then new password
+# Enter existing key, then new strong password
+```
+
+⚠️ **Warning:** Without an emergency password, losing your TKey means permanent data loss!
+
+### Migrate from Old USS File Method (if applicable)
+
+If you previously used `--uss PATH` (deprecated):
+
+```bash
+# 1. Add new USS-derived key
+echo "your-password" | sudo tkey-luks-client \
+  --challenge-from-stdin \
+  --derive-uss \
+  --output - | \
+sudo cryptsetup luksAddKey /dev/sdaX -
+
+# 2. Test new key works
+echo "your-password" | sudo tkey-luks-client \
+  --challenge-from-stdin \
+  --derive-uss \
+  --output /tmp/test-key.bin
+
+sudo cryptsetup luksOpen /dev/sdaX test-mapper \
+  --key-file=/tmp/test-key.bin
+sudo cryptsetup luksClose test-mapper
+rm /tmp/test-key.bin
+
+# 3. Remove old keyslot (be careful!)
+sudo cryptsetup luksKillSlot /dev/sdaX 0
+
+# 4. Clean up old USS files
+sudo rm -f /etc/tkey-luks/uss.bin
+sudo rm -f /usr/local/lib/tkey-luks/uss.bin
+
+# 5. Update initramfs
+sudo update-initramfs -u -k all
 ```
 
 ## Configuration
@@ -181,7 +282,7 @@ Configuration options:
 
 ```bash
 # Device app path
-DEVICE_APP=/usr/lib/tkey-luks/tkey-luks-device.bin
+DEVICE_APP=/usr/local/lib/tkey-luks/tkey-luks-device.bin
 
 # Timeout for TKey detection (seconds)
 TIMEOUT=30
@@ -198,34 +299,24 @@ DEBUG=no
 
 ### Update crypttab
 
-Ensure your encrypted device is in `/etc/crypttab`:
+**CRITICAL for Ubuntu 24.04+:** You MUST add `initramfs` option to `/etc/crypttab`:
 
 ```bash
 # /etc/crypttab
 # <target> <source> <key file> <options>
-cryptroot UUID=xxxx-xxxx-xxxx none luks,tkey
+cryptroot UUID=xxxx-xxxx-xxxx none luks,discard,initramfs
 ```
 
-The `tkey` option triggers TKey unlock in initramfs.
+The `initramfs` option ensures custom unlock scripts run at boot.
 
 ## Testing
 
-### Create Test Environment
-
-```bash
-# Create QEMU test VM
-cd test/qemu
-./create-vm.sh
-
-# This creates a 10GB LUKS encrypted VM
-```
-
-### Create Simple Test Image
+### Create Test Image
 
 ```bash
 # Create small LUKS test image
 cd test/luks-setup
-./create-test-image.sh test.img 100M testpassword
+./create-tkey-test-image.sh test.img 100M testpassword
 ```
 
 ### Test Unlock
@@ -238,16 +329,6 @@ cd test/luks-setup
 ./test-unlock.sh test.img yes
 ```
 
-### Run Test VM
-
-```bash
-cd test/qemu
-./run-vm.sh
-
-# With options:
-./run-vm.sh --console --debug
-```
-
 ## Troubleshooting
 
 ### TKey Not Detected
@@ -255,14 +336,18 @@ cd test/qemu
 **Problem:** TKey device not found during boot
 
 **Solutions:**
+
 1. Check USB connection
 2. Try different USB port
 3. Check dmesg for USB errors:
+
    ```bash
    dmesg | grep -i tkey
    dmesg | grep -i usb
    ```
+
 4. Verify TKey is working:
+
    ```bash
    lsusb | grep Tillitis
    ```
@@ -272,15 +357,21 @@ cd test/qemu
 **Problem:** Compilation errors
 
 **Solutions:**
+
 1. Check dependencies installed:
+
    ```bash
    ./scripts/setup-dev.sh
    ```
+
 2. Update submodules:
+
    ```bash
    git submodule update --remote
    ```
+
 3. Check compiler version:
+
    ```bash
    gcc --version
    ```
@@ -290,19 +381,27 @@ cd test/qemu
 **Problem:** TKey unlock not attempted at boot
 
 **Solutions:**
+
 1. Verify hooks installed:
+
    ```bash
-   ls -la /usr/share/initramfs-tools/hooks/tkey-luks
+   ls -la /etc/initramfs-tools/hooks/tkey-luks
    ```
+
 2. Rebuild initramfs:
+
    ```bash
    sudo update-initramfs -u -k all
    ```
+
 3. Check hook is in initramfs:
+
    ```bash
    lsinitramfs /boot/initrd.img-$(uname -r) | grep tkey
    ```
+
 4. Enable debug mode and check logs:
+
    ```bash
    # Add to kernel command line: debug break=mount
    ```
@@ -312,18 +411,24 @@ cd test/qemu
 **Problem:** Binary has dynamic dependencies
 
 **Solutions:**
+
 1. Install musl-libc:
+
    ```bash
    sudo apt-get install musl-tools
    ```
+
 2. Build with musl:
+
    ```bash
    cd client
    CC=musl-gcc make
    ```
+
 3. Verify:
+
    ```bash
-   ldd client/tkey-luks-unlock
+   ldd client/tkey-luks-client
    ```
 
 ### Device App Won't Load
@@ -331,16 +436,22 @@ cd test/qemu
 **Problem:** TKey rejects device app
 
 **Solutions:**
+
 1. Rebuild device app:
+
    ```bash
    cd device-app
    make clean && make
    ```
+
 2. Check binary size:
+
    ```bash
    ls -lh device-app/tkey-luks-device.bin
    ```
+
 3. Test with tkey-runapp:
+
    ```bash
    tkey-runapp device-app/tkey-luks-device.bin
    ```
@@ -351,15 +462,16 @@ cd test/qemu
 
 ```bash
 # Check files installed
-ls -la /usr/lib/tkey-luks/
-ls -la /usr/share/initramfs-tools/hooks/tkey-luks
+ls -la /usr/local/bin/tkey-luks-client
+ls -la /usr/local/lib/tkey-luks/
+ls -la /etc/initramfs-tools/hooks/tkey-luks
 ls -la /etc/tkey-luks/
 
 # Check initramfs contains tkey-luks
 lsinitramfs /boot/initrd.img-$(uname -r) | grep tkey
 
 # Verify binary
-/usr/lib/tkey-luks/tkey-luks-unlock --help
+tkey-luks-client --help
 ```
 
 ### Verify TKey
@@ -390,5 +502,5 @@ After successful setup:
 
 - [TESTING.md](TESTING.md) - Comprehensive testing guide
 - [SECURITY.md](SECURITY.md) - Security considerations
-- [PLAN.md](../PLAN.md) - Project implementation plan
-- Tillitis Documentation: https://dev.tillitis.se/
+- [USS-DERIVATION.md](USS-DERIVATION.md) - USS derivation security analysis
+- Tillitis Documentation: <https://dev.tillitis.se/>

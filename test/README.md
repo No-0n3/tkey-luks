@@ -1,113 +1,186 @@
 # Test Directory
 
-This directory contains all testing infrastructure for TKey-LUKS.
+This directory contains all testing infrastructure for TKey-LUKS with improved USS derivation (v1.1.0+).
 
 ## Structure
 
-```
+```text
 test/
-├── qemu/               # QEMU VM testing
-│   ├── create-vm.sh    # Create test VM with LUKS
-│   ├── run-vm.sh       # Run test VM
-│   └── vm/             # VM files (created)
-├── luks-setup/         # LUKS test image creation
-│   ├── create-test-image.sh  # Create LUKS test image
-│   └── test-unlock.sh        # Test unlock mechanisms
-└── integration/        # Integration tests (TODO)
-    └── test-boot.sh    # Full boot test
+├── test-improved-uss.sh        # Hardware USS derivation test (requires TKey)
+├── test-uss-derivation.sh      # USS derivation unit tests (no TKey needed)
+├── test-tkey-unlock.sh         # Boot unlock testing with TKey
+└── luks-setup/                 # LUKS test image utilities
+    ├── create-tkey-test-image.sh   # Create 100MB LUKS2 test image
+    ├── add-tkey-key.sh             # Enroll TKey with USS derivation
+    ├── test-unlock.sh              # Test unlock with TKey or password
+    └── README.md                   # Detailed luks-setup documentation
 ```
 
 ## Quick Start
 
-### Create Test Environment
+### USS Derivation Tests (No Hardware Required)
 
 ```bash
-# Create QEMU VM (recommended for full testing)
-cd qemu
-./create-vm.sh
+# Run USS derivation unit tests
+./test-uss-derivation.sh
+```
 
-# Or create simple test image
+Tests PBKDF2 derivation, salt detection, and parameter validation without requiring physical TKey.
+
+### Hardware Tests (Requires TKey)
+
+```bash
+# Comprehensive USS derivation test with real TKey
+./test-improved-uss.sh
+```
+
+Tests all USS derivation scenarios with hardware device at `/dev/ttyACM0`.
+
+### LUKS Image Testing
+
+```bash
+# Create test image
 cd luks-setup
-./create-test-image.sh my-test.img 100M mypassword
+./create-tkey-test-image.sh
+
+# Enroll TKey with improved USS derivation
+./add-tkey-key.sh test-luks-100mb.img test123
+
+# Test unlock
+./test-unlock.sh test-luks-100mb.img yes test123
 ```
 
-### Run Tests
+## Test Scripts
+
+### 1. test-uss-derivation.sh
+
+**Purpose:** Unit tests for USS derivation (no hardware required)
+
+**Tests:**
+
+- PBKDF2 key derivation
+- System salt detection (machine-id, dbus, DMI, hostname)
+- Custom salt parameter
+- Custom iteration count
+- Error handling
+
+**Usage:**
 
 ```bash
-# Run VM test
-cd qemu
-./run-vm.sh
-
-# Test LUKS unlock
-cd luks-setup
-./test-unlock.sh my-test.img no   # Password mode
-./test-unlock.sh my-test.img yes  # TKey mode (after building)
+./test-uss-derivation.sh
 ```
 
-## Test Components
+**Requirements:** tkey-luks-client in PATH or built in `../client/`
 
-### QEMU VM Testing
+### 2. test-improved-uss.sh
 
-The QEMU VM provides a complete test environment:
-- Full boot sequence
-- Real initramfs
-- Actual LUKS encryption
-- USB device passthrough (for TKey)
+**Purpose:** Comprehensive hardware testing with real TKey device
 
-**Create VM:**
+**Tests:**
+
+- Basic USS derivation with default parameters
+- Custom USS password
+- Custom salt values
+- Custom PBKDF2 iterations
+- Deterministic key generation
+- Key size validation (64 bytes)
+
+**Usage:**
+
 ```bash
-cd qemu
-./create-vm.sh
+./test-improved-uss.sh
 ```
 
-**Run VM:**
+**Requirements:**
+
+- TKey device at `/dev/ttyACM0`
+- tkey-luks-client built
+- Device app binary at `../device-app/tkey-luks-device.bin`
+
+### 3. test-tkey-unlock.sh
+
+**Purpose:** Boot-time unlock testing
+
+**Usage:**
+
 ```bash
-./run-vm.sh                    # Standard run
-./run-vm.sh --console          # Console output
-./run-vm.sh --debug            # Debug mode
-./run-vm.sh --tkey-device DEV  # Specific TKey
+./test-tkey-unlock.sh [options]
 ```
 
-### LUKS Test Images
+**Requirements:** TKey device, LUKS partition configured
 
-Small LUKS encrypted images for quick testing.
+### 4. luks-setup/ Scripts
 
-**Create:**
-```bash
-cd luks-setup
-./create-test-image.sh <file> <size> <password>
-```
+See [luks-setup/README.md](luks-setup/README.md) for detailed documentation on:
 
-**Test:**
-```bash
-./test-unlock.sh <file> [yes|no]
-```
+- Creating test LUKS images
+- Enrolling TKey keys with improved USS derivation
+- Testing unlock mechanisms
 
 ## Requirements
 
-### For QEMU Testing
-- qemu-system-x86_64
-- qemu-utils
-- debootstrap (for VM creation)
-- cryptsetup
-- 10GB+ free disk space
+### For USS Derivation Tests
+
+- tkey-luks-client (built from `../client/`)
+- No TKey hardware needed for unit tests
+- TKey device required for hardware tests
 
 ### For LUKS Testing
-- cryptsetup
-- loop device support
-- root/sudo access
 
-## Writing Tests
+- cryptsetup (>= 2:2.0.0)
+- loop device support (`modprobe loop`)
+- root/sudo access for LUKS operations
+- TKey device at `/dev/ttyACM0` for TKey unlock tests
 
-See [../docs/TESTING.md](../docs/TESTING.md) for:
-- Test template
-- Testing best practices
-- CI integration
-- Debugging techniques
+## Test Results
+
+All tests should pass on a correctly configured system:
+
+```bash
+# Example output from test-uss-derivation.sh
+✓ Test 1: Basic USS derivation
+✓ Test 2: USS with custom salt
+✓ Test 3: USS with custom iterations
+✓ Test 4: System salt detection
+All USS derivation tests passed!
+
+# Example output from test-improved-uss.sh
+✓ Test 1: Basic improved USS
+✓ Test 2: Custom USS password
+✓ Test 3: Custom salt
+✓ Test 4: Custom iterations
+✓ Test 5: Deterministic derivation
+All improved USS tests passed!
+```
 
 ## Common Issues
 
+### "TKey not found at /dev/ttyACM0"
+
+```bash
+# Check if TKey is connected
+ls -la /dev/ttyACM*
+
+# Check USB devices
+lsusb | grep Tillitis
+
+# Check dmesg
+dmesg | grep -i tty
+```
+
+### "tkey-luks-client not found"
+
+```bash
+# Build the client first
+cd ../client
+make clean && make
+
+# Or add to PATH
+export PATH="$PATH:$(pwd)/../client"
+```
+
 ### "Loop device not available"
+
 ```bash
 # Load loop module
 sudo modprobe loop
@@ -116,28 +189,26 @@ sudo modprobe loop
 ls /dev/loop*
 ```
 
-### "Permission denied"
-Most test scripts require root for:
-- Loop device operations
-- LUKS operations
-- QEMU with USB passthrough
+### "Permission denied" on LUKS operations
 
-Run with sudo:
+Most LUKS test scripts require root access:
+
 ```bash
-sudo ./create-test-image.sh
+sudo ./test-unlock.sh
 ```
 
-### "QEMU not found"
-Install QEMU:
-```bash
-# Debian/Ubuntu
-sudo apt-get install qemu-system-x86 qemu-utils
+## Writing Tests
 
-# Fedora
-sudo dnf install qemu-system-x86 qemu-img
-```
+See [../docs/TESTING.md](../docs/TESTING.md) for:
+
+- Test templates and best practices
+- CI/CD integration guidelines
+- Debugging techniques
+- Security testing considerations
 
 ## See Also
 
-- [../docs/TESTING.md](../docs/TESTING.md) - Full testing guide
-- [../PLAN.md](../PLAN.md) - Project plan
+- [../docs/TESTING.md](../docs/TESTING.md) - Comprehensive testing guide
+- [../docs/USS-DERIVATION.md](../docs/USS-DERIVATION.md) - USS derivation technical details
+- [../docs/SECURITY.md](../docs/SECURITY.md) - Security model and threat analysis
+- [luks-setup/README.md](luks-setup/README.md) - LUKS test utilities documentation
