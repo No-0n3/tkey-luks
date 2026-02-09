@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -13,9 +14,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/tillitis/tkeyclient"
+	"golang.org/x/crypto/pbkdf2"
 )
 
 // TKey-LUKS protocol command codes
@@ -108,6 +111,12 @@ var (
 	rspDeriveKey     = RspDeriveKey{}
 	cmdGetNameVer    = CmdGetNameVer{}
 	rspGetNameVer    = RspGetNameVer{}
+)
+
+const (
+	// USS derivation defaults
+	defaultPBKDF2Iterations = 100000
+	ussLength               = 32
 )
 
 // TKeyLUKS represents a connection to the TKey-LUKS device app
@@ -370,9 +379,20 @@ Flags:
   --skip-load-app          Skip loading app (use if app already loaded)
   --port PATH              TKey serial port (default: auto-detect)
   --speed BPS              Serial port speed (default: 62500)
-  --uss PATH               User Supplied Secret file (32 bytes)
+
+USS Options (User Supplied Secret):
+  --derive-uss             Derive USS from password using PBKDF2 (RECOMMENDED)
+  --uss-password TEXT      Password for USS derivation (defaults to challenge)
+  --uss-password-stdin     Read USS password from stdin
+  --salt TEXT              Custom salt for USS derivation (auto-detected if not provided)
+  --pbkdf2-iterations N    PBKDF2 iterations (default: 100000)
+  --uss PATH               [DEPRECATED] Load USS from file (insecure)
+
+Output Options:
   --save-key FILE          Save derived key to file
   --output FILE            Output key to file (use '-' for stdout)
+
+Other Options:
   --verbose                Enable verbose output
   --help                   Show this help
 
@@ -431,20 +451,87 @@ func findDeviceBinary() string {
 	return "../device-app/" + deviceBinary
 }
 
+// getSystemSalt attempts to get a unique system identifier for salt
+// Priority order: machine-id, hostname, random fallback
+func getSystemSalt() ([]byte, error) {
+	// Try /etc/machine-id (systemd)
+	if data, err := os.ReadFile("/etc/machine-id"); err == nil {
+		salt := strings.TrimSpace(string(data))
+		if salt != "" {
+			le.Printf("Using machine-id for salt")
+			return []byte(salt), nil
+		}
+	}
+	
+	// Try /var/lib/dbus/machine-id (alternative location)
+	if data, err := os.ReadFile("/var/lib/dbus/machine-id"); err == nil {
+		salt := strings.TrimSpace(string(data))
+		if salt != "" {
+			le.Printf("Using dbus machine-id for salt")
+			return []byte(salt), nil
+		}
+	}
+	
+	// Try DMI product UUID (hardware-based)
+	if data, err := os.ReadFile("/sys/class/dmi/id/product_uuid"); err == nil {
+		salt := strings.TrimSpace(string(data))
+		if salt != "" && salt != "00000000-0000-0000-0000-000000000000" {
+			le.Printf("Using DMI product UUID for salt")
+			return []byte(salt), nil
+		}
+	}
+	
+	// Fallback: use hostname
+	hostname, err := os.Hostname()
+	if err == nil && hostname != "" && hostname != "localhost" {
+		le.Printf("WARNING: Using hostname as salt (not ideal for security)")
+		return []byte(hostname), nil
+	}
+	
+	return nil, fmt.Errorf("could not determine system salt")
+}
+
+// deriveUSSFromPassword derives a USS from a password using PBKDF2
+func deriveUSSFromPassword(password string, salt []byte, iterations int) ([]byte, error) {
+	if password == "" {
+		return nil, fmt.Errorf("password cannot be empty")
+	}
+	if len(salt) == 0 {
+		return nil, fmt.Errorf("salt cannot be empty")
+	}
+	if iterations < 10000 {
+		return nil, fmt.Errorf("iterations too low (minimum 10000)")
+	}
+	
+	// Use PBKDF2 with SHA-256 to derive USS
+	uss := pbkdf2.Key([]byte(password), salt, iterations, ussLength, sha256.New)
+	
+	if len(uss) != ussLength {
+		return nil, fmt.Errorf("derived USS wrong length: %d", len(uss))
+	}
+	
+	return uss, nil
+}
+
 func main() {
 	var (
-		challengeStr    string
-		challengeStdin  bool
-		luksImage       string
-		mapperName      = "tkey-luks"
-		appPath         = findDeviceBinary()
-		skipLoadApp     bool
-		portPath        string
-		speed           = tkeyclient.SerialSpeed
-		ussPath         string
-		saveKeyPath     string
-		outputPath      string
-		verbose         bool
+		challengeStr       string
+		challengeStdin     bool
+		luksImage          string
+		mapperName         = "tkey-luks"
+		appPath            = findDeviceBinary()
+		skipLoadApp        bool
+		portPath           string
+		speed              = tkeyclient.SerialSpeed
+		ussPath            string // Deprecated: for backward compatibility
+		deriveUSS          bool
+		ussPassword        string
+		ussPasswordStdin   bool
+		saltValue          string
+		pbkdf2Iterations   = defaultPBKDF2Iterations
+		saveKeyPath        string
+		outputPath         string
+		verbose            bool
 	)
 
 	// Simple flag parsing
@@ -504,10 +591,33 @@ func main() {
 			fmt.Sscanf(args[i+1], "%d", &speed)
 			i++
 		case "--uss":
+			// Deprecated: kept for backward compatibility
 			if i+1 >= len(args) {
 				le.Fatal("--uss requires an argument")
 			}
 			ussPath = args[i+1]
+			i++
+		case "--derive-uss":
+			deriveUSS = true
+		case "--uss-password":
+			if i+1 >= len(args) {
+				le.Fatal("--uss-password requires an argument")
+			}
+			ussPassword = args[i+1]
+			i++
+		case "--uss-password-stdin":
+			ussPasswordStdin = true
+		case "--salt":
+			if i+1 >= len(args) {
+				le.Fatal("--salt requires an argument")
+			}
+			saltValue = args[i+1]
+			i++
+		case "--pbkdf2-iterations":
+			if i+1 >= len(args) {
+				le.Fatal("--pbkdf2-iterations requires an argument")
+			}
+			fmt.Sscanf(args[i+1], "%d", &pbkdf2Iterations)
 			i++
 		case "--save-key":
 			if i+1 >= len(args) {
@@ -574,9 +684,59 @@ func main() {
 			appPath, err)
 	}
 
-	// Load USS if provided
+	// Handle USS: either derive from password or load from file
 	var uss []byte
-	if ussPath != "" {
+	
+	if deriveUSS {
+		// Improved mode: derive USS from password
+		le.Printf("Using improved USS derivation from password")
+		
+		// Get USS password (can be same as challenge or different)
+		if ussPasswordStdin {
+			if verbose {
+				le.Printf("Reading USS password from stdin...")
+			}
+			stdinData, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				le.Fatalf("Failed to read USS password from stdin: %v", err)
+			}
+			ussPassword = string(bytes.TrimSpace(stdinData))
+		} else if ussPassword == "" {
+			// Default: use challenge password for USS derivation
+			ussPassword = challengeStr
+			le.Printf("Using challenge password for USS derivation (recommended)")
+		}
+		
+		if ussPassword == "" {
+			le.Fatal("USS password cannot be empty")
+		}
+		
+		// Get or detect salt
+		var salt []byte
+		if saltValue != "" {
+			salt = []byte(saltValue)
+			le.Printf("Using provided salt")
+		} else {
+			salt, err = getSystemSalt()
+			if err != nil {
+				le.Fatalf("Failed to get system salt: %v\n\nYou can provide a custom salt with --salt", err)
+			}
+		}
+		
+		// Derive USS
+		uss, err = deriveUSSFromPassword(ussPassword, salt, pbkdf2Iterations)
+		if err != nil {
+			le.Fatalf("Failed to derive USS: %v", err)
+		}
+		
+		if verbose {
+			le.Printf("USS derived successfully using PBKDF2 (%d iterations)", pbkdf2Iterations)
+			le.Printf("USS (hex): %s", hex.EncodeToString(uss))
+		}
+	} else if ussPath != "" {
+		// Backward compatibility: load USS from file (DEPRECATED)
+		le.Printf("WARNING: Loading USS from file is deprecated and insecure!")
+		le.Printf("WARNING: Consider using --derive-uss instead")
 		uss, err = os.ReadFile(ussPath)
 		if err != nil {
 			le.Fatalf("Failed to read USS file: %v", err)
@@ -585,6 +745,10 @@ func main() {
 			le.Fatalf("USS must be 32 bytes, got %d", len(uss))
 		}
 		le.Printf("Using USS from %s", ussPath)
+	} else {
+		// No USS (original behavior, least secure)
+		le.Printf("WARNING: No USS provided (--derive-uss or --uss)")
+		le.Printf("WARNING: For better security, use --derive-uss")
 	}
 
 	// Connect to TKey

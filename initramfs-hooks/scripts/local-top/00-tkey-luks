@@ -134,17 +134,23 @@ derive_key_with_tkey() {
     
     # Run TKey client with challenge
     # The client will:
-    #   1. Load device app to TKey
-    #   2. Send challenge
-    #   3. Wait for physical touch (security feature)
-    #   4. Derive 64-byte key
-    #   5. Output key to file
+    #   1. Derive USS from password using PBKDF2 (improved security!)
+    #   2. Load device app to TKey with derived USS
+    #   3. Send challenge (same password used for USS)
+    #   4. Wait for physical touch (security feature)
+    #   5. Derive 64-byte LUKS key
+    #   6. Output key to file
+    #
+    # This ensures password is used in TWO layers:
+    #   - USS derivation (affects CDI)
+    #   - Challenge data (affects BLAKE2b)
     
     if echo "$challenge" | "$TKEY_CLIENT" \
         --device "$TKEY_SERIAL" \
         --device-app "$TKEY_DEVICE_APP" \
         --output "$output_file" \
         --challenge-from-stdin \
+        --derive-uss \
         2>/tmp/tkey-error.log; then
         
         log_tkey_success "Key derived successfully"
