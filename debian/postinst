@@ -1,0 +1,72 @@
+#!/bin/bash
+# postinst script for tkey-luks
+set -e
+
+case "$1" in
+    configure)
+        echo "TKey-LUKS: Configuring package..."
+        
+        # Update initramfs to include TKey hooks
+        if command -v update-initramfs >/dev/null 2>&1; then
+            echo "TKey-LUKS: Updating initramfs..."
+            update-initramfs -u -k all || true
+        fi
+        
+        # Create udev rule for TKey device access
+        if [ -d /etc/udev/rules.d ]; then
+            echo "TKey-LUKS: Installing udev rules..."
+            cat > /etc/udev/rules.d/60-tkey.rules <<'EOF'
+# TillitisKey USB device
+# Allow access to TKey for boot unlock
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="1207", ATTRS{idProduct}=="8887", MODE="0660", GROUP="dialout"
+EOF
+            
+            # Reload udev rules
+            if command -v udevadm >/dev/null 2>&1; then
+                udevadm control --reload-rules || true
+                udevadm trigger || true
+            fi
+        fi
+        
+        # Ensure /etc/crypttab has correct options
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "TKey-LUKS Installation Complete"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "Next steps:"
+        echo ""
+        echo "1. Enroll your TKey with LUKS (improved USS derivation):"
+        echo "   echo 'YourPassword' | sudo tkey-luks-client \\"
+        echo "     --challenge-from-stdin \\"
+        echo "     --derive-uss \\"
+        echo "     --output - | \\"
+        echo "   sudo cryptsetup luksAddKey /dev/sdXY -"
+        echo ""
+        echo "2. Ensure /etc/crypttab has 'initramfs' option:"
+        echo "   <target> UUID=<uuid> none luks,discard,initramfs"
+        echo ""
+        echo "3. Update initramfs:"
+        echo "   sudo update-initramfs -u"
+        echo ""
+        echo "4. Reboot and test unlock with TKey"
+        echo ""
+        echo "Documentation: /usr/share/doc/tkey-luks/"
+        echo "Setup Guide: /usr/share/doc/tkey-luks/SETUP.md"
+        echo "Security: /usr/share/doc/tkey-luks/SECURITY.md"
+        echo "USS Derivation: /usr/share/doc/tkey-luks/USS-DERIVATION.md"
+        echo ""
+        ;;
+        
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+        
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

@@ -1,0 +1,57 @@
+#!/usr/bin/make -f
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export GOFLAGS = -buildmode=pie -trimpath -mod=readonly -modcacherw
+
+%:
+	dh $@
+
+override_dh_auto_clean:
+	$(MAKE) -C client clean || true
+	$(MAKE) -C device-app clean || true
+	rm -f client/tkey-luks-client
+	rm -f device-app/tkey-luks-device.bin
+
+override_dh_auto_build:
+	# Build Go client
+	$(MAKE) -C client
+	
+	# Build RISC-V device app
+	$(MAKE) -C device-app
+
+override_dh_auto_test:
+	# Run unit tests for USS derivation
+	cd test && ./test-uss-derivation.sh || true
+
+override_dh_auto_install:
+	# Install client binary
+	install -D -m 0755 client/tkey-luks-client \
+		$(CURDIR)/debian/tkey-luks/usr/sbin/tkey-luks-client
+	
+	# Install device app binary
+	install -D -m 0644 device-app/tkey-luks-device.bin \
+		$(CURDIR)/debian/tkey-luks/usr/share/tkey-luks/tkey-luks-device.bin
+	
+	# Install initramfs hooks
+	install -D -m 0755 initramfs-hooks/hooks/tkey-luks \
+		$(CURDIR)/debian/tkey-luks/usr/share/initramfs-tools/hooks/tkey-luks
+	
+	# Install initramfs scripts
+	install -D -m 0755 initramfs-hooks/scripts/local-top/00-tkey-luks \
+		$(CURDIR)/debian/tkey-luks/usr/share/initramfs-tools/scripts/local-top/00-tkey-luks
+	
+	# Install documentation
+	install -D -m 0644 README.md \
+		$(CURDIR)/debian/tkey-luks/usr/share/doc/tkey-luks/README.md
+	install -D -m 0644 docs/SETUP.md \
+		$(CURDIR)/debian/tkey-luks/usr/share/doc/tkey-luks/SETUP.md
+	install -D -m 0644 docs/SECURITY.md \
+		$(CURDIR)/debian/tkey-luks/usr/share/doc/tkey-luks/SECURITY.md
+	install -D -m 0644 docs/USS-DERIVATION.md \
+		$(CURDIR)/debian/tkey-luks/usr/share/doc/tkey-luks/USS-DERIVATION.md
+
+override_dh_installsystemd:
+	# No systemd units to install
+
+override_dh_installinit:
+	# No init scripts to install

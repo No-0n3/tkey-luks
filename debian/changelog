@@ -1,0 +1,30 @@
+tkey-luks (1.1.0-1) unstable; urgency=medium
+
+  * New upstream release: Improved USS Derivation (v1.1.0)
+  * Major security enhancement: USS derived from password using PBKDF2
+  * Removed USS file storage (no longer writes USS to /boot)
+  * Added --derive-uss flag for password-based USS derivation
+  * Added --uss-password and --uss-password-stdin flags
+  * Added --salt flag for custom system salt (defaults to machine-id)
+  * Added --pbkdf2-iterations flag (default: 100,000 iterations)
+  * Updated initramfs scripts to use --derive-uss automatically
+  * Double password protection: USS derivation + BLAKE2b challenge
+  * System-unique derivation using machine-id as salt
+  * Comprehensive USS-DERIVATION.md documentation
+  * Updated SETUP.md with improved enrollment instructions
+  * Updated SECURITY.md with new security model analysis
+  * Added test scripts for USS derivation validation
+  * Deprecated --uss PATH flag (still supported with warnings)
+  * Improved error messages and debugging output
+
+ -- TKey-LUKS Developers <isaac.l.caceres@gmail.com>  Wed, 15 Jan 2025 10:00:00 +0000
+
+tkey-luks (1.0.0-1) unstable; urgency=low
+
+  * Initial release
+  * TKey-based LUKS disk encryption unlock
+  * Basic USS file storage support
+  * Initramfs integration
+  * LUKS1 and LUKS2 support
+
+ -- TKey-LUKS Developers <isaac.l.caceres@gmail.com>  Mon, 01 Jan 2024 10:00:00 +0000

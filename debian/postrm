@@ -1,0 +1,57 @@
+#!/bin/bash
+# postrm script for tkey-luks
+set -e
+
+case "$1" in
+    purge|remove)
+        echo "TKey-LUKS: Removing package..."
+        
+        # Update initramfs to remove TKey hooks
+        if command -v update-initramfs >/dev/null 2>&1; then
+            echo "TKey-LUKS: Updating initramfs..."
+            update-initramfs -u -k all || true
+        fi
+        
+        # Remove udev rules
+        if [ -f /etc/udev/rules.d/60-tkey.rules ]; then
+            echo "TKey-LUKS: Removing udev rules..."
+            rm -f /etc/udev/rules.d/60-tkey.rules
+            
+            if command -v udevadm >/dev/null 2>&1; then
+                udevadm control --reload-rules || true
+            fi
+        fi
+        
+        # Clean up old USS files if they exist (migration from v1.0.x)
+        if [ "$1" = "purge" ] && [ -d /boot/initramfs-uss ]; then
+            echo "TKey-LUKS: Found old USS files from v1.0.x"
+            echo "To remove them: sudo rm -rf /boot/initramfs-uss/"
+            echo "(Not automatically removed for safety)"
+        fi
+        
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "TKey-LUKS Removed"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "WARNING: If you were using TKey for LUKS unlock:"
+        echo ""
+        echo "1. Ensure you have another working LUKS keyslot"
+        echo "2. Update /etc/crypttab to use emergency password"
+        echo "3. Run: sudo update-initramfs -u"
+        echo "4. Test boot with emergency password before reboot"
+        echo ""
+        ;;
+        
+    upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+        
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

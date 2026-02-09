@@ -1,0 +1,44 @@
+Source: tkey-luks
+Section: admin
+Priority: optional
+Maintainer: TKey-LUKS Developers <isaac.l.caceres@gmail.com>
+Build-Depends: debhelper-compat (= 13),
+               golang-go (>= 2:1.21),
+               make,
+               clang,
+               llvm,
+               lld
+Standards-Version: 4.6.2
+Homepage: https://github.com/No-0n3/tkey-luks
+Vcs-Browser: https://github.com/No-0n3/tkey-luks
+Vcs-Git: https://github.com/No-0n3/tkey-luks.git
+Rules-Requires-Root: no
+
+Package: tkey-luks
+Architecture: amd64
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         cryptsetup (>= 2:2.0.0),
+         initramfs-tools (>= 0.130),
+         systemd (>= 237)
+Recommends: secure-boot,
+            tpm2-tools
+Description: Tillitis TKey-based LUKS disk encryption unlock
+ TKey-LUKS provides hardware-based LUKS disk encryption unlock using the
+ Tillitis TKey security device. It implements a secure three-factor
+ authentication system combining:
+  - Something you have: Physical TKey device (contains UDS hardware secret)
+  - Something you know: Password (used twice: USS derivation + BLAKE2b)
+    - System-unique: Machine identity (machine-id salt)
+ .
+ Key features:
+  - Improved USS derivation using PBKDF2 (no USS files on disk)
+  - Cryptographic boot-time unlock via initramfs hooks
+  - Touch-to-unlock physical authentication
+  - Multi-layer key derivation (USS → CDI → BLAKE2b)
+  - Compatible with LUKS1 and LUKS2
+ .
+ This package includes:
+  - tkey-luks-client: Client application for key derivation
+  - TKey device application: Firmware for hardware key operations
+  - Initramfs hooks: Boot-time integration scripts
