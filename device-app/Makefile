@@ -26,7 +26,7 @@ LDFLAGS = -T $(LIBDIR)/app.lds
 LDFLAGS += -L $(LIBDIR)
 LDFLAGS += -lcommon -lcrt0
 LDFLAGS += -nostdlib -mno-relax
-LDFLAGS += -fuse-ld=lld-20
+LDFLAGS += -fuse-ld=lld
 
 # Target binary
 TARGET = tkey-luks-device
@@ -65,9 +65,9 @@ check-toolchain:
 		echo "  See: https://github.com/tillitis/tkey-device-signer"; \
 		exit 1; \
 	}
-	@which lld-20 > /dev/null 2>&1 || which lld > /dev/null 2>&1 || { \
+	@which lld > /dev/null 2>&1 || { \
 		echo "ERROR: LLD linker not found"; \
-		echo "Install: apt-get install lld or lld-20"; \
+		echo "Install: apt-get install lld"; \
 		exit 1; \
 	}
 
