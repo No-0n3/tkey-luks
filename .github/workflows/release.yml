@@ -67,7 +67,6 @@ jobs:
           make clean
           make
           ls -lh tkey-luks-client
-          ./tkey-luks-client --help || echo "Client built successfully"
       
       - name: Build device application
         run: |
@@ -285,7 +284,6 @@ jobs:
           
           # Verify installation
           which tkey-luks-client
-          tkey-luks-client --help || echo "Client installed"
           
           # Verify files
           test -f /usr/sbin/tkey-luks-client
