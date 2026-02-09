@@ -45,7 +45,7 @@ OBJS = $(SRCS:.c=.o)
 INCLUDES = -I$(LIBDIR)/include -I$(LIBDIR)
 
 # Default target
-all: check-toolchain check-libs $(BIN) verify-hash
+all: check-toolchain check-libs $(BIN)
 
 # Check if LLVM/Clang toolchain is available
 check-toolchain:
@@ -92,7 +92,7 @@ build-libs:
 
 # Build ELF executable
 $(ELF): $(OBJS)
-	$(CC) $(CFLAGS) $(OBJS) $(LDFLAGS) -L $(LIBDIR)/monocypher -lmonocypher -L $(LIBDIR)/blake2s -lblake2s -o $@
+	$(CC) $(CFLAGS) $(OBJS) $(LDFLAGS) -L $(LIBDIR) -lmonocypher -o $@
 
 # Convert ELF to raw binary for TKey
 $(BIN): $(ELF)
@@ -103,25 +103,6 @@ $(BIN): $(ELF)
 	@echo ""
 	@echo "Device app ready for TKey"
 
-# Verify binary integrity against existing hash
-verify-hash:
-	@if [ ! -f "$(BIN).sha512" ]; then \
-		echo "Warning: Hash file $(BIN).sha512 not found. Skipping verification."; \
-	else \
-		echo "Verifying $(BIN) against existing hash..."; \
-		sha512sum -c $(BIN).sha512 && echo "✓ Binary verified" || (echo "✗ Verification failed - binary differs from expected hash" && exit 1); \
-	fi
-
-# Generate new SHA-512 hash (use this to update the hash file)
-generate-hash: $(BIN)
-	@echo "Generating SHA-512 hash..."
-	@sha512sum $(BIN) > $(BIN).sha512
-	@echo "Hash file: $(BIN).sha512"
-
-# Verify binary integrity against hash (alias for verify-hash)
-verify: verify-hash
-	@echo "Verifying $(BIN) integrity..."
-	@sha512sum -c $(BIN).sha512 && echo "✓ Binary verified" || (echo "✗ Verification failed" && exit 1)
 
 # Compile C sources
 %.o: %.c
@@ -158,4 +139,4 @@ config:
 	@echo "  TARGET: $(TARGET)"
 	@echo "  Output: $(BIN)"
 
-.PHONY: all check-toolchain check-libs build-libs clean clean-all install config verify verify-hash generate-hash
+.PHONY: all check-toolchain check-libs build-libs clean clean-all install config

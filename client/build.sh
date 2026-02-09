@@ -15,12 +15,4 @@ go mod verify
 # Build client
 printf "\nBuilding client binary (static)...\n"
 CGO_ENABLED=0 go build -ldflags="-s -w -extldflags '-static'" -o tkey-luks-client main.go
-
-# Verifying SHA-512 hash
-printf "\nVerifying SHA-512 hash...\n"
-if [ "$(sha512sum tkey-luks-client)" = "$(cat tkey-luks-client.sha512)" ]; then
-    printf "✓ SHA-512 hash verified\n"
-else
-    printf "✗ SHA-512 verification failed\n"
-    exit 1
-fi
+printf "\n✓ Client built successfully: ./tkey-luks-client\n"

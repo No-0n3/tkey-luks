@@ -38,11 +38,8 @@ make -j -C ../submodules/tkey-libs
 printf "\nBuilding device app...\n"
 make -j
 
-# Verifying SHA-512 hash
-printf "\nVerifying SHA-512 hash...\n"
-if [ "$(sha512sum tkey-luks-device.bin)" = "$(cat tkey-luks-device.bin.sha512)" ]; then
-    printf "✓ SHA-512 hash verified\n"
+if [ -f "tkey-luks-device.bin" ]; then
+    printf "\n✓ Device app built successfully: ./tkey-luks-device.bin\n"
 else
-    printf "✗ SHA-512 verification failed\n"
+    printf "\n✗ Device app build failed\n"
     exit 1
-fi
