@@ -33,6 +33,8 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
+          cache: true
+          cache-dependency-path: client/go.sum
       
       - name: Install build dependencies
         run: |
