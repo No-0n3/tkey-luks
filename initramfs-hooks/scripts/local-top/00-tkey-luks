@@ -34,8 +34,10 @@ debug_log() {
 debug_log "=== TKey-LUKS script starting ==="
 
 # Configuration
-TKEY_CLIENT="/usr/local/bin/tkey-luks-client"
-TKEY_DEVICE_APP="/usr/local/lib/tkey-luks/tkey-luks-device.bin"
+TKEY_CLIENT="/usr/sbin/tkey-luks-client"
+TKEY_DEVICE_APP="/usr/share/tkey-luks/tkey-luks-device.bin"
+TKEY_CLIENT_FALLBACK="/usr/local/bin/tkey-luks-client"
+TKEY_DEVICE_APP_FALLBACK="/usr/local/lib/tkey-luks/tkey-luks-device.bin"
 TKEY_SERIAL="/dev/ttyACM0"
 MAX_WAIT=30
 WAIT_INCREMENT=2
@@ -89,15 +91,25 @@ check_tkey_components() {
     debug_log "  Device app: $TKEY_DEVICE_APP"
     
     if [ ! -x "$TKEY_CLIENT" ]; then
-        debug_log "Client not found or not executable"
-        log_tkey_failure "TKey client not found: $TKEY_CLIENT"
-        return 1
+        if [ -x "$TKEY_CLIENT_FALLBACK" ]; then
+            TKEY_CLIENT="$TKEY_CLIENT_FALLBACK"
+            debug_log "Using fallback client: $TKEY_CLIENT"
+        else
+            debug_log "Client not found or not executable"
+            log_tkey_failure "TKey client not found: $TKEY_CLIENT"
+            return 1
+        fi
     fi
     
     if [ ! -f "$TKEY_DEVICE_APP" ]; then
-        debug_log "Device app not found"
-        log_tkey_failure "TKey device app not found: $TKEY_DEVICE_APP"
-        return 1
+        if [ -f "$TKEY_DEVICE_APP_FALLBACK" ]; then
+            TKEY_DEVICE_APP="$TKEY_DEVICE_APP_FALLBACK"
+            debug_log "Using fallback device app: $TKEY_DEVICE_APP"
+        else
+            debug_log "Device app not found"
+            log_tkey_failure "TKey device app not found: $TKEY_DEVICE_APP"
+            return 1
+        fi
     fi
     
     debug_log "All components present"

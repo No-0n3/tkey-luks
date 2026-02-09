@@ -22,16 +22,23 @@ esac
 echo "TKey-LUKS: Installing components into initramfs..."
 
 # Define installation paths
-TKEY_LUKS_LIB="/usr/local/lib/tkey-luks"
-TKEY_LUKS_BIN="/usr/local/bin"
+TKEY_LUKS_LIB="/usr/share/tkey-luks"
+TKEY_LUKS_BIN="/usr/sbin"
+TKEY_LUKS_FALLBACK_LIB="/usr/local/lib/tkey-luks"
+TKEY_LUKS_FALLBACK_BIN="/usr/local/bin"
 
 # Copy TKey-LUKS client binary
 if [ -f "$TKEY_LUKS_BIN/tkey-luks-client" ]; then
     # Manually copy to preserve permissions for Go binary
-    mkdir -p "${DESTDIR}/usr/local/bin"
-    cp -p "$TKEY_LUKS_BIN/tkey-luks-client" "${DESTDIR}/usr/local/bin/"
-    chmod +x "${DESTDIR}/usr/local/bin/tkey-luks-client"
+    mkdir -p "${DESTDIR}/usr/sbin"
+    cp -p "$TKEY_LUKS_BIN/tkey-luks-client" "${DESTDIR}/usr/sbin/"
+    chmod +x "${DESTDIR}/usr/sbin/tkey-luks-client"
     echo "  ✓ Copied TKey-LUKS client"
+elif [ -f "$TKEY_LUKS_FALLBACK_BIN/tkey-luks-client" ]; then
+    mkdir -p "${DESTDIR}/usr/local/bin"
+    cp -p "$TKEY_LUKS_FALLBACK_BIN/tkey-luks-client" "${DESTDIR}/usr/local/bin/"
+    chmod +x "${DESTDIR}/usr/local/bin/tkey-luks-client"
+    echo "  ✓ Copied TKey-LUKS client (fallback)"
 else
     echo "  ✗ WARNING: tkey-luks-client not found at $TKEY_LUKS_BIN/tkey-luks-client"
     echo "    Install with: make install (from client directory)"
@@ -42,6 +49,10 @@ if [ -f "$TKEY_LUKS_LIB/tkey-luks-device.bin" ]; then
     mkdir -p "${DESTDIR}${TKEY_LUKS_LIB}"
     cp "$TKEY_LUKS_LIB/tkey-luks-device.bin" "${DESTDIR}${TKEY_LUKS_LIB}/"
     echo "  ✓ Copied TKey device app"
+elif [ -f "$TKEY_LUKS_FALLBACK_LIB/tkey-luks-device.bin" ]; then
+    mkdir -p "${DESTDIR}${TKEY_LUKS_FALLBACK_LIB}"
+    cp "$TKEY_LUKS_FALLBACK_LIB/tkey-luks-device.bin" "${DESTDIR}${TKEY_LUKS_FALLBACK_LIB}/"
+    echo "  ✓ Copied TKey device app (fallback)"
 else
     echo "  ✗ WARNING: tkey-luks-device.bin not found at $TKEY_LUKS_LIB/tkey-luks-device.bin"
     echo "    Install with: make install (from device-app directory)"
