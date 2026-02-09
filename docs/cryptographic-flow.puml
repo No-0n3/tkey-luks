@@ -1,0 +1,165 @@
+@startuml TKey-LUKS Cryptographic Flow
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam handwritten false
+skinparam defaultFontName Arial
+skinparam componentStyle rectangle
+
+title TKey-LUKS Cryptographic Flow - Current Implementation
+
+package "Stage 1: Device Secrets (TKey Firmware)" #lightgreen {
+    component "UDS\n(Unique Device Secret)" as UDS #palegreen
+    note right of UDS
+      <b>🔒 Burned into TKey hardware</b>
+      Cannot be read or extracted
+      Unique per device
+    end note
+    
+    component "USS\n(User Supplied Secret)" as USS #orange
+    note right of USS
+      <b>⚠️ Optional - May be in initramfs!</b>
+      32 bytes
+      Security risk if stored in cleartext
+    end note
+    
+    component "Device App Binary" as APP
+    note right of APP
+      Measured by firmware
+      Ensures code integrity
+    end note
+    
+    component "CDI\n(Compound Device Identifier)" as CDI #lightblue
+    note bottom of CDI
+      <b>CDI = Hash(UDS ⊕ App ⊕ USS)</b>
+      Hardware root of trust
+    end note
+}
+
+package "Stage 2: Key Generation (Device App - C)" #lightyellow {
+    component "Ed25519\nKeypair Generation" as KEYPAIR
+    note right of KEYPAIR
+      ~2 seconds to generate
+      Deterministic from CDI
+    end note
+    
+    component "secret_key\n(64 bytes)" as SECKEY #ff9999
+    note right of SECKEY
+      <b>🔐 Never leaves TKey</b>
+      Private key
+      Used for BLAKE2b keying
+    end note
+    
+    component "pubkey\n(32 bytes)" as PUBKEY
+    note right of PUBKEY
+      📤 Sent to client
+      Public identity
+    end note
+}
+
+package "Stage 3: User Input (Boot Time)" #lavender {
+    component "Initramfs\nPrompt" as PROMPT
+    component "User Password/Challenge\n(Variable length)" as USERPASS #plum
+    note right of USERPASS
+      <b>🔑 Knowledge Factor</b>
+      Only user-provided secret
+      Sent as challenge to device
+    end note
+}
+
+package "Stage 4: Key Derivation (Device App)" #lightcyan {
+    component "Physical Touch\n(Sensor)" as TOUCH #cyan
+    note right of TOUCH
+      <b>👆 Presence Factor</b>
+      30 second timeout
+      LED green during wait
+    end note
+    
+    component "BLAKE2b-512\nKeyed Hash" as BLAKE2B #lightblue
+    note bottom of BLAKE2B
+      <b>Keyed hash function</b>
+      Key: secret_key (64 bytes)
+      Data: user_password
+      Output: 64 bytes
+    end note
+    
+    component "Derived LUKS Key\n(64 bytes)" as LUKSKEY #dodgerblue
+    note right of LUKSKEY
+      📤 Returned to client
+      Used once then wiped
+    end note
+}
+
+package "Stage 5: Volume Unlock" #lightgreen {
+    component "cryptsetup luksOpen\n--key-file" as CRYPTSETUP
+    component "/dev/mapper/root\nUnlocked Volume" as MAPPER #palegreen
+    note right of MAPPER
+      ✅ System can now boot
+      Root filesystem accessible
+    end note
+}
+
+' Connections
+UDS --> CDI
+USS --> CDI
+APP --> CDI
+
+CDI --> KEYPAIR
+KEYPAIR --> SECKEY
+KEYPAIR --> PUBKEY
+
+PROMPT --> USERPASS
+
+SECKEY --> BLAKE2B : key input
+USERPASS --> BLAKE2B : data input
+TOUCH --> BLAKE2B : gate
+
+BLAKE2B --> LUKSKEY
+
+LUKSKEY --> CRYPTSETUP
+CRYPTSETUP --> MAPPER
+
+' Security properties box
+note as SecurityNote #ffeeee
+  <b>═══════════════════════════════════════</b>
+  <b>SECURITY PROPERTIES</b>
+  <b>═══════════════════════════════════════</b>
+  
+  <b>Multi-Factor Authentication:</b>
+  
+  <b>Factor 1: HAVE</b>
+  • Physical TKey device with UDS
+  
+  <b>Factor 2: KNOW</b>
+  • User password/challenge
+  
+  <b>Factor 3: PRESENT</b>
+  • Physical touch (user presence)
+  
+  <b>Optional Factor: HAVE</b>
+  • USS file (if provided)
+  
+  <b>⚠️ CRITICAL WEAKNESS:</b>
+  <b>If USS stored in initramfs:</b>
+  • Initramfs in /boot (extractable)
+  • <color:red>Factor 1 = TKey + Disk</color>
+  • <color:red>Attacker only needs password!</color>
+  
+  <b>Why USS in initramfs is dangerous:</b>
+  1. Anyone with disk can extract it
+  2. Reduces 3-factor to effectively 1-factor
+  3. USS should be separate token or derived
+  
+  <b>Current Formula:</b>
+  LUKS_key = BLAKE2b(
+    key = Ed25519_derive(Hash(UDS + App + USS)),
+    data = user_password
+  )
+  
+  <b>USS only in CDI, not in challenge!</b>
+end note
+
+SecurityNote .. SECKEY
+SecurityNote .. USS
+SecurityNote .. USERPASS
+
+@enduml

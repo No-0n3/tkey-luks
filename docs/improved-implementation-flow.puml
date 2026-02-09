@@ -1,0 +1,164 @@
+@startuml TKey-LUKS Improved Implementation Flow
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam handwritten false
+skinparam defaultFontName Arial
+skinparam componentStyle rectangle
+
+title TKey-LUKS Improved Implementation - USS Derived from Password
+
+package "Stage 1: User Input (Boot Time)" #lavender {
+    component "Initramfs Prompt" as PROMPT
+    component "User Password" as USERPASS #plum
+    note right of USERPASS
+      <b>🔑 Single user input</b>
+      Used for BOTH:
+      • USS derivation
+      • Challenge data
+    end note
+}
+
+package "Stage 2: USS Derivation (Client)" #lightyellow {
+    component "PBKDF2 / Argon2\n(Strong KDF)" as KDF
+    note right of KDF
+      <b>Derive USS from password</b>
+      USS = KDF(password, salt, iterations)
+      
+      Salt can be:
+      • System UUID
+      • Machine-id
+      • Custom per-install
+      
+      <b>Never store USS on disk!</b>
+    end note
+    
+    component "Derived USS\n(32 bytes)" as DUSS #lightgreen
+    note right of DUSS
+      ✅ Never stored
+      ✅ Deterministic
+      ✅ Unique per system (via salt)
+    end note
+}
+
+package "Stage 3: Device Setup (TKey Firmware)" #lightgreen {
+    component "UDS\n(Hardware Secret)" as UDS #palegreen
+    component "Device App Binary" as APP
+    
+    component "CDI = Hash(UDS ⊕ App ⊕ USS)" as CDI #lightblue
+    note bottom of CDI
+      <b>USS now incorporates password!</b>
+      Device identity bound to user knowledge
+    end note
+}
+
+package "Stage 4: Key Derivation (Device App)" #lightcyan {
+    component "secret_key =\nEd25519_derive(CDI)" as SECKEY #ff9999
+    
+    component "BLAKE2b-512\nKeyed Hash" as BLAKE2B #lightblue
+    note bottom of BLAKE2B
+      <b>Double protection:</b>
+      Key: secret_key (contains USS)
+      Data: user_password (same as USS source)
+      
+      Password used in BOTH layers!
+    end note
+    
+    component "Physical Touch" as TOUCH #cyan
+    
+    component "LUKS Key\n(64 bytes)" as LUKSKEY #dodgerblue
+}
+
+package "Stage 5: Volume Unlock" #palegreen {
+    component "cryptsetup luksOpen" as CRYPTSETUP
+    component "Unlocked Volume ✓" as MAPPER #lightgreen
+}
+
+' Connections
+PROMPT --> USERPASS
+
+USERPASS --> KDF : Input
+USERPASS --> BLAKE2B : challenge
+
+KDF --> DUSS
+
+UDS --> CDI
+APP --> CDI
+DUSS --> CDI
+
+CDI --> SECKEY
+SECKEY --> BLAKE2B : key
+TOUCH --> BLAKE2B : gate
+
+BLAKE2B --> LUKSKEY
+LUKSKEY --> CRYPTSETUP
+CRYPTSETUP --> MAPPER
+
+' Security comparison
+note as SecurityComparison #eeffee
+  <b>═══════════════════════════════════════════════</b>
+  <b>SECURITY COMPARISON</b>
+  <b>═══════════════════════════════════════════════</b>
+  
+  <b><color:red>❌ CURRENT (Weak if USS in initramfs):</color></b>
+  
+  USS stored in /boot/initramfs (cleartext)
+  ↓
+  Attacker steals: Disk + TKey
+  Attacker extracts: USS from initramfs
+  Attacker only needs: Password (1 factor!)
+  
+  <b>Formula:</b>
+  LUKS = BLAKE2b(key=derive(Hash(UDS+App+USS_stored)), data=password)
+                                           ^^^^^^^
+                                       extractable!
+  
+  <b>═══════════════════════════════════════════════</b>
+  
+  <b><color:green>✓ IMPROVED (USS derived from password):</color></b>
+  
+  USS never stored, derived from password
+  ↓
+  Attacker steals: Disk + TKey
+  Attacker still needs: Password (+ TKey still required)
+  Cannot extract USS from disk!
+  
+  <b>Formula:</b>
+  USS = KDF(password, salt)
+  LUKS = BLAKE2b(key=derive(Hash(UDS+App+USS_derived)), data=password)
+                                         ^^^^^^^^^^^^
+                                    computed, not stored!
+  
+  <b>═══════════════════════════════════════════════</b>
+  
+  <b>Key Advantages:</b>
+  ✓ USS is deterministic (same password = same USS)
+  ✓ USS never leaves memory, never stored on disk
+  ✓ Per-system salt makes USS unique per installation
+  ✓ Password used in TWO places (USS + challenge)
+  ✓ Strong KDF makes brute force harder
+  ✓ TKey still required (cannot emulate without UDS)
+  
+  <b>Attack Now Requires:</b>
+  • Physical TKey (UDS)
+  • User password (cannot extract from disk)
+  • Physical touch
+  • Correct system salt (easy to get, but no help alone)
+  
+  <b>═══════════════════════════════════════════════</b>
+  
+  <b>Even Better: Add Separate Hardware Token</b>
+  
+  Store USS on USB stick/smart card
+  ↓
+  Attacker needs three physical items:
+  • TKey (UDS)
+  • USB/smart card (USS)
+  • Password
+  
+  = True three-factor authentication!
+end note
+
+SecurityComparison .. DUSS
+SecurityComparison .. USERPASS
+
+@enduml

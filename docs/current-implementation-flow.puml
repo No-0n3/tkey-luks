@@ -1,0 +1,160 @@
+@startuml TKey-LUKS Current Implementation Flow
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam handwritten false
+skinparam defaultFontName Arial
+skinparam sequenceMessageAlign center
+skinparam boxPadding 10
+
+title TKey-LUKS Current Implementation - Boot Flow
+
+actor "User" as user
+participant "Initramfs\n(00-tkey-luks)" as initramfs
+participant "TKey Client\n(Go)" as client
+participant "TKey Hardware\n(Firmware)" as tkey
+participant "Device App\n(C)" as app
+participant "LUKS Volume" as luks
+
+== Boot Phase ==
+activate initramfs
+initramfs -> initramfs: Check components\n(client binary, device app)
+initramfs -> tkey: Wait for device at /dev/ttyACM0
+note right #yellow: Max 30s timeout
+
+== Authentication ==
+initramfs -> user: Prompt: "Enter TKey challenge"
+user -> initramfs: <b>User password/passphrase</b>
+note left #lightpink
+  <b>This is currently the ONLY</b>
+  <b>user-provided secret input</b>
+end note
+
+== TKey Setup ==
+initramfs -> client: Launch client with:\n--challenge-from-stdin\n--device-app PATH
+activate client
+
+alt Optional USS provided (--uss flag)
+    client -> client: Load USS file\n(32 bytes)
+    note right #orange: <b>⚠️ USS is optional</b>\nOften stored in initramfs\n(security weakness!)
+end
+
+client -> tkey: Connect via serial\n(62500 baud)
+activate tkey
+
+client -> tkey: Load device app binary\n+ USS (if provided)
+tkey -> tkey: Firmware measures app binary
+tkey -> tkey: <b>CDI = Hash(UDS ⊕ App ⊕ USS)</b>
+note right #lightgreen
+  <b>Hardware Root of Trust:</b>
+  • <b>UDS</b>: Unique Device Secret (burned-in)
+  • <b>USS</b>: User Supplied Secret (optional)
+  • <b>CDI</b>: Compound Device Identifier
+  
+  USS contributes to device identity if present
+end note
+
+tkey -> app: Start app (CDI in memory)
+activate app
+
+app -> app: Generate Ed25519 keypair:\n<b>secret_key = derive(CDI)</b>\n<b>pubkey = public(secret_key)</b>
+note right #lightyellow: Takes ~2 seconds\nfor keypair generation
+
+app -> client: Ready (command loop)
+
+== Challenge Processing ==
+client -> app: CMD_GET_NAMEVERSION
+app -> client: RSP: "tk1 luks" v1 ✓
+
+client -> app: CMD_GET_PUBKEY
+app -> client: RSP: 32-byte public key
+
+client -> app: CMD_SET_CHALLENGE\nSize: len(user_password)
+app -> client: RSP: STATUS_OK
+note right: State: LOADING
+
+client -> app: CMD_LOAD_CHALLENGE\n(127-byte chunks)
+app -> app: Buffer challenge in memory
+app -> client: RSP: STATUS_OK
+note right: State: DERIVING
+
+== Key Derivation ==
+client -> app: CMD_DERIVE_KEY
+app -> user: <b><color:green>LED GREEN: Touch required!</color></b>
+user -> tkey: <b>👆 Physical touch within 30s</b>
+note left #lightcyan
+  <b>User Presence Verification</b>
+  Cannot proceed without touch
+end note
+
+app -> app: <b>derived_key = BLAKE2b_keyed(</b>\n  <b>output: 64 bytes,</b>\n  <b>key: secret_key[64],</b>\n  <b>data: user_password)</b>
+note right #lightblue
+  <b>Key Derivation Formula:</b>
+  LUKS_key = BLAKE2b(
+    key = derive(CDI),
+    data = user_password
+  )
+  
+  <b>CDI already contains:</b>
+  • UDS (device unique, hardware)
+  • USS (if provided - may be in initramfs!)
+  
+  <b>Current: USS in CDI only</b>
+  <b>Not in challenge data</b>
+end note
+
+app -> app: crypto_wipe(challenge)\ncrypto_wipe(derived_key)
+app -> client: RSP: 64-byte LUKS key
+app -> app: Return to STATE_STARTED
+
+== LUKS Unlock ==
+client -> client: Write key to /tmp/tkey-*.key
+client -> luks: cryptsetup luksOpen\n--key-file=/tmp/tkey-*.key
+activate luks
+
+alt Key matches LUKS keyslot
+    luks -> luks: Unlock encrypted volume
+    luks -> client: Success ✓
+    client -> initramfs: Exit 0
+    initramfs -> initramfs: <b>/dev/mapper/NAME ready</b>
+    deactivate luks
+    deactivate app
+    deactivate tkey
+    deactivate client
+    initramfs -> initramfs: Continue boot →
+    deactivate initramfs
+else Wrong key
+    luks -> client: Failure ✗
+    client -> initramfs: Exit 1
+    initramfs -> user: Retry (max 3 attempts)\nor fallback to password
+end
+
+== Security Analysis ==
+note over user, luks #ffcccc
+  <b>══════════════════════════════════════════</b>
+  <b>THREAT MODEL - CURRENT IMPLEMENTATION</b>
+  <b>══════════════════════════════════════════</b>
+  
+  <b>Attacker needs to unlock:</b>
+  ✓ Physical TKey device (UDS inside)
+  ✓ USS file (if used - currently optional)
+  ✓ User challenge/password (knowledge)
+  ✓ Physical presence (touch sensor)
+  
+  <b>⚠️ CRITICAL WEAKNESS:</b>
+  <b>If USS stored in initramfs (cleartext):</b>
+  • Initramfs is in /boot (often unencrypted)
+  • Extract: unmkinitramfs /boot/initrd.img
+  • <color:red>Attacker with (disk + TKey) only needs password!</color>
+  
+  <b>Current Weaknesses:</b>
+  1. USS is optional (many don't use it)
+  2. If USS used, stored in initramfs (extractable)
+  3. Challenge is single password factor
+  4. USS not used as part of challenge (only in CDI)
+  
+  <b>Attack Scenario:</b>
+  Steal laptop + TKey → Extract USS → Brute force password
+  <color:red>3-factor becomes 1-factor!</color>
+end note
+
+@enduml
