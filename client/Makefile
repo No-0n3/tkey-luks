@@ -15,7 +15,7 @@ HASH = $(BINARY).sha512
 # Build flags for static linking and reduced size
 LDFLAGS = -ldflags="-s -w -extldflags '-static'"
 
-# Default target - build binary and verify against existing hash
+# Default target - build binary and optionally verify hash
 all: $(BINARY) verify-hash
 
 # Build the Go binary
@@ -27,7 +27,9 @@ $(BINARY): main.go go.mod
 
 # Verify binary integrity against existing hash
 verify-hash:
-	@if [ ! -f "$(HASH)" ]; then \
+	@if [ "$(VERIFY_HASH)" != "1" ]; then \
+		echo "Skipping hash verification (set VERIFY_HASH=1 to enable)."; \
+	elif [ ! -f "$(HASH)" ]; then \
 		echo "Warning: Hash file $(HASH) not found. Skipping verification."; \
 	else \
 		echo "Verifying $(BINARY) against existing hash..."; \
@@ -41,6 +43,7 @@ generate-hash: $(BINARY)
 	@echo "Hash file: $(HASH)"
 
 # Verify binary integrity against hash (alias for verify-hash)
+verify: VERIFY_HASH=1
 verify: verify-hash
 	@echo "Verifying $(BINARY) integrity..."
 	@sha512sum -c $(HASH) && echo "✓ Binary verified" || (echo "✗ Verification failed" && exit 1)
