@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2025 <your-name>
+// SPDX-FileCopyrightText: 2025 Isaac Caceres
 // SPDX-License-Identifier: BSD-2-Clause
 
 package main

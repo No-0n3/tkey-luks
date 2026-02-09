@@ -1,4 +1,5 @@
-// SPDX-FileCopyrightText: 2026 TKey-LUKS Project
+// SPDX-FileCopyrightText: 2022 Tillitis AB <tillitis.se>
+// SPDX-FileCopyrightText: 2026 Isaac Caceres
 // SPDX-License-Identifier: BSD-2-Clause
 // 
 // Adapted from tkey-device-signer for LUKS key derivation
