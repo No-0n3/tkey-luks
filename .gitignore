@@ -15,8 +15,8 @@
 /device-app/tkey-luks-device.elf
 
 # Go
-go.sum
 vendor/
+!/client/go.sum
 
 # Plantuml
 plantuml.jar
