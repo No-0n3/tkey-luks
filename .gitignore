@@ -18,6 +18,9 @@
 go.sum
 vendor/
 
+# Plantuml
+plantuml.jar
+
 # Node.js
 node_modules/
 
