@@ -1,3 +1,19 @@
+tkey-luks (1.1.1-1) unstable; urgency=medium
+
+  * Critical bug fix: USS salt availability in initramfs (v1.1.1)
+  * Fixed machine-id not being copied to initramfs
+  * Ensures consistent USS derivation between setup and boot
+  * Added machine-id copy to initramfs-hooks/hooks/tkey-luks
+  * Added verification script: test/verify-salt-availability.sh
+  * Fixed test/test-improved-uss.sh client path detection
+  * Updated documentation: docs/IMPROVED-USS-FIX.md
+  * Consolidated security documentation into comprehensive SECURITY.md
+  * Merged USS-DERIVATION.md content into SECURITY.md
+  * Updated VERSION.md with v1.1.1 changelog
+  * Improved error messages during initramfs build
+
+ -- TKey-LUKS Developers <isaac.l.caceres@gmail.com>  Mon, 10 Feb 2026 12:00:00 +0000
+
 tkey-luks (1.1.0-1) unstable; urgency=medium
 
   * New upstream release: Improved USS Derivation (v1.1.0)

@@ -1,6 +1,6 @@
 {
   "name": "tkey-luks",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "type": "module",
   "description": "Unlock LUKS encrypted root partitions at boot using Tillitis TKey hardware security key.",
   "main": "index.js",
