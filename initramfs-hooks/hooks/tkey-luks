@@ -66,6 +66,18 @@ fi
 # Copy device nodes helper (if needed for serial device access)
 # Serial device /dev/ttyACM0 should be available in initramfs already via udev
 
+# Copy machine-id for USS salt derivation
+# This is critical for the improved USS derivation to work consistently
+# between setup (when key is added) and boot (when key is used)
+if [ -f /etc/machine-id ]; then
+    mkdir -p "${DESTDIR}/etc"
+    cp /etc/machine-id "${DESTDIR}/etc/machine-id"
+    echo "  ✓ Copied machine-id for USS derivation"
+else
+    echo "  ✗ WARNING: /etc/machine-id not found - USS derivation may fail!"
+    echo "    The same salt must be available during boot"
+fi
+
 # Ensure required modules are loaded
 # CDC-ACM module for TKey USB-serial communication
 manual_add_modules cdc-acm
