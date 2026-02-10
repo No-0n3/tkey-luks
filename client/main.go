@@ -418,25 +418,28 @@ Examples:
 // findDeviceBinary searches for the device binary in multiple locations
 func findDeviceBinary() string {
 	const deviceBinary = "tkey-luks-device.bin"
-	
+
 	// Try multiple locations in order of preference
 	searchPaths := []string{
 		// 1. Same directory as the client executable
-		"",  // Will be replaced with executable's directory
+		"", // Will be replaced with executable's directory
 		// 2. System installation path (from device-app Makefile)
 		"/usr/local/lib/tkey-luks/" + deviceBinary,
-		// 3. Development path (relative from source)
-		"../device-app/" + deviceBinary,
-		// 4. Current directory
+		// 3. Debian package install path
+		"/usr/share/tkey-luks/" + deviceBinary,
+		// 4. Development path (relative to the client executable)
+		"", // Will be replaced with executable-relative device-app path
+		// 5. Current directory
 		"./" + deviceBinary,
 	}
-	
-	// Get executable's directory and use it for first search path
+
+	// Get executable's directory and use it for executable-relative paths
 	if exePath, err := os.Executable(); err == nil {
 		exeDir := filepath.Dir(exePath)
 		searchPaths[0] = filepath.Join(exeDir, deviceBinary)
+		searchPaths[2] = filepath.Clean(filepath.Join(exeDir, "..", "device-app", deviceBinary))
 	}
-	
+
 	// Search for the binary in each path
 	for _, path := range searchPaths {
 		if path == "" {
@@ -446,8 +449,12 @@ func findDeviceBinary() string {
 			return path
 		}
 	}
-	
+
 	// Return development path as fallback (will error later if not found)
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		return filepath.Clean(filepath.Join(exeDir, "..", "device-app", deviceBinary))
+	}
 	return "../device-app/" + deviceBinary
 }
 
