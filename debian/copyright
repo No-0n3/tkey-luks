@@ -4,7 +4,7 @@ Upstream-Contact: TKey-LUKS Developers <isaac.l.caceres@gmail.com>
 Source: https://github.com/tillitis/tkey-luks
 
 Files: *
-Copyright: 2024-2025 TKey-LUKS Contributors
+Copyright: 2024-2026 TKey-LUKS Contributors
 License: BSD-2-Clause
 
 Files: submodules/tkey-libs/*
@@ -20,7 +20,7 @@ Copyright: 2017-2019 Loup Vaillant
 License: BSD-2-Clause
 
 Files: debian/*
-Copyright: 2024-2025 TKey-LUKS Developers
+Copyright: 2024-2026 TKey-LUKS Developers
 License: BSD-2-Clause
 
 License: BSD-2-Clause
