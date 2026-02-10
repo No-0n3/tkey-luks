@@ -8,6 +8,8 @@
 /dist/
 /target/
 /out/
+/artifacts/
+/bin/
 
 # Project binaries
 /client/tkey-luks-client
