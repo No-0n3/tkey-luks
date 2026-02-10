@@ -687,6 +687,7 @@ func main() {
 			"The device app can be:\n"+
 			"  - Built in ../device-app/ (for development)\n"+
 			"  - Installed to /usr/local/lib/tkey-luks/ (via 'make install' in device-app/)\n"+
+			"  - Installed to /usr/share/tkey-luks/ (via Debian package)\n"+
 			"  - Specified with --app PATH\n",
 			appPath, err)
 	}
