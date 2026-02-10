@@ -108,7 +108,7 @@ sudo apt-get install cryptsetup qemu-system-x86 genisoimage
 
 ```bash
 # Clone repository
-git clone https://github.com/YOUR_USERNAME/tkey-luks.git
+git clone https://github.com/No-0n3/tkey-luks.git
 cd tkey-luks/
 
 # Initialize submodules

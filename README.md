@@ -31,13 +31,22 @@ This project provides a secure mechanism to unlock LUKS encrypted root partition
 
 **Why this matters:** Previously, if USS was stored in initramfs, an attacker with physical access could extract it, reducing 3-factor auth to 1-factor. The improved approach keeps USS ephemeral and password-derived.
 
-See [docs/USS-DERIVATION.md](docs/USS-DERIVATION.md) for detailed security analysis.
+See [docs/SECURITY.md](docs/SECURITY.md) for detailed security analysis and USS implementation.
 
 ## Project Status
 
-✅ **v1.1.0 Release** - Improved USS Derivation with password-based security!
+✅ **v1.1.1 Release** - Salt availability fix for improved USS derivation!
 
-### Latest Updates (v1.1.0)
+### Latest Updates (v1.1.1)
+
+- ✅ **Critical Fix**: Machine-id now copied to initramfs for consistent USS derivation
+- ✅ **Verification Tool**: New script to check salt availability
+- ✅ **Documentation**: Complete troubleshooting guide for USS derivation
+- ✅ **Test Improvements**: Fixed test scripts for better reliability
+
+**Upgrade from v1.1.0?** You must rebuild initramfs and re-add LUKS keys. See [docs/IMPROVED-USS-FIX.md](docs/IMPROVED-USS-FIX.md) for details.
+
+### Previous Release (v1.1.0)
 
 - ✅ **Password-Based USS Derivation**: PBKDF2-HMAC-SHA256 with 100k iterations
 - ✅ **No USS Files**: Removed need for USS file storage (ephemeral derivation)
@@ -56,7 +65,7 @@ See [docs/USS-DERIVATION.md](docs/USS-DERIVATION.md) for detailed security analy
 - Boot timing: ~33 seconds total (including physical touch)
 - Test results: USS derivation deterministic, system-specific, secure
 
-See [docs/SETUP.md](docs/SETUP.md) for setup instructions and [docs/USS-DERIVATION.md](docs/USS-DERIVATION.md) for security details.
+See [docs/SETUP.md](docs/SETUP.md) for setup instructions and [docs/SECURITY.md](docs/SECURITY.md) for security details.
 
 ## Quick Start
 

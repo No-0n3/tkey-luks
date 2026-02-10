@@ -1,6 +1,69 @@
 # Project Version and Release Notes
 
-## Current Version: v1.1.0
+## Current Version: v1.1.1
+
+### v1.1.1 - USS Salt Availability Fix (February 2026)
+
+#### Critical Bug Fix: Machine-ID in Initramfs
+
+**Problem**: USS derivation was failing at boot because `/etc/machine-id` (used as salt) was not available in initramfs, causing different USS to be derived during setup vs. boot.
+
+**Impact**: LUKS unlock would fail with "Key derived successfully" but "Failed to unlock LUKS device" because the derived USS (and thus CDI and LUKS key) didn't match.
+
+#### 🔧 Fixes
+
+**Initramfs Hook:**
+- Added machine-id copy to initramfs in `initramfs-hooks/hooks/tkey-luks`
+- Ensures consistent salt availability between setup and boot
+- Added verification message: "✓ Copied machine-id for USS derivation"
+
+**Testing:**
+- Fixed `test/test-improved-uss.sh` to find client in multiple locations
+- Added `test/verify-salt-availability.sh` to verify salt consistency
+
+**Documentation:**
+- Added `docs/IMPROVED-USS-FIX.md` with complete troubleshooting guide
+- Explains root cause, fix, verification, and migration steps
+
+#### ⚠️ Required Actions After Update
+
+1. **Rebuild initramfs** to include machine-id:
+   ```bash
+   sudo update-initramfs -u -k all
+   ```
+
+2. **Verify salt availability**:
+   ```bash
+   cd test && bash verify-salt-availability.sh
+   ```
+
+3. **Re-add LUKS keys** (old keys used wrong USS):
+   ```bash
+   cd test/luks-setup
+   ./add-tkey-key.sh /dev/sdXY your-password
+   ```
+
+#### 📝 Technical Details
+
+**Root Cause:**
+- Setup: Reads `/etc/machine-id` from host → derives USS₁
+- Boot: `/etc/machine-id` unavailable in initramfs → derives USS₂
+- Result: USS₁ ≠ USS₂ → Wrong CDI → Wrong LUKS key → Unlock fails
+
+**Solution:**
+- Copy `/etc/machine-id` into initramfs during `update-initramfs`
+- Both setup and boot now use same salt → same USS → same key → unlock succeeds
+
+**Security**: Including machine-id in initramfs is safe as it's not a secret (world-readable on host system). Real security comes from: password + TKey hardware + UDS + physical touch.
+
+#### 📦 Files Changed
+
+- `initramfs-hooks/hooks/tkey-luks` - Added machine-id copy
+- `test/test-improved-uss.sh` - Fixed client path detection
+- `test/verify-salt-availability.sh` - NEW: Verification tool
+- `docs/IMPROVED-USS-FIX.md` - NEW: Complete fix documentation
+
+---
 
 ### v1.1.0 - Improved USS Derivation (January 2025)
 
@@ -35,7 +98,7 @@ This release introduces a significant security improvement by eliminating USS fi
 
 **Documentation:**
 
-- New comprehensive guide: `docs/USS-DERIVATION.md`
+- New comprehensive security guide: `docs/SECURITY.md` (includes USS derivation)
 - Updated `docs/SETUP.md` with improved enrollment instructions
 - Updated `docs/SECURITY.md` with new security model analysis
 - Migration guide from v1.0.x file-based USS
