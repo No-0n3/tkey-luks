@@ -138,7 +138,6 @@ jobs:
           Documentation:
           --------------
           /usr/share/doc/tkey-luks/
-          /usr/share/doc/tkey-luks/USS-DERIVATION.md
           
           Description:
           ------------
@@ -164,7 +163,6 @@ jobs:
           cp README.md tkey-luks-$VERSION-bin/
           cp docs/SETUP.md tkey-luks-$VERSION-bin/
           cp docs/SECURITY.md tkey-luks-$VERSION-bin/
-          cp docs/USS-DERIVATION.md tkey-luks-$VERSION-bin/
           
           tar -czf artifacts/tkey-luks-$VERSION-linux-amd64.tar.gz tkey-luks-$VERSION-bin/
           rm -rf tkey-luks-$VERSION-bin
@@ -231,7 +229,6 @@ jobs:
             ### Documentation
             - 📖 [Setup Guide](docs/SETUP.md)
             - 🔐 [Security Model](docs/SECURITY.md)
-            - 🔑 [USS Derivation Details](docs/USS-DERIVATION.md)
             
             ### Migration from v1.0.x
             
@@ -308,13 +305,6 @@ jobs:
           test -f /usr/share/tkey-luks/tkey-luks-device.bin
           test -f /usr/share/initramfs-tools/hooks/tkey-luks
           test -f /usr/share/initramfs-tools/scripts/local-top/00-tkey-luks
-          if [ ! -f /usr/share/doc/tkey-luks/USS-DERIVATION.md ] && \
-             [ ! -f /usr/share/doc/tkey-luks/USS-DERIVATION.md.gz ] && \
-             [ ! -f /usr/share/doc/tkey-luks/docs/USS-DERIVATION.md ]; then
-            echo "Missing USS-DERIVATION.md";
-            ls -l /usr/share/doc/tkey-luks || true;
-            exit 1;
-          fi
           
           echo "✅ Package installation test passed"
       
