@@ -437,7 +437,7 @@ func findDeviceBinary() string {
 	if exePath, err := os.Executable(); err == nil {
 		exeDir := filepath.Dir(exePath)
 		searchPaths[0] = filepath.Join(exeDir, deviceBinary)
-		searchPaths[2] = filepath.Clean(filepath.Join(exeDir, "..", "device-app", deviceBinary))
+		searchPaths[3] = filepath.Clean(filepath.Join(exeDir, "..", "device-app", deviceBinary))
 	}
 
 	// Search for the binary in each path
@@ -451,10 +451,6 @@ func findDeviceBinary() string {
 	}
 
 	// Return development path as fallback (will error later if not found)
-	if exePath, err := os.Executable(); err == nil {
-		exeDir := filepath.Dir(exePath)
-		return filepath.Clean(filepath.Join(exeDir, "..", "device-app", deviceBinary))
-	}
 	return "../device-app/" + deviceBinary
 }
 
