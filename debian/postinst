@@ -40,8 +40,9 @@ EOF
         echo "   echo 'YourPassword' | sudo tkey-luks-client \\"
         echo "     --challenge-from-stdin \\"
         echo "     --derive-uss \\"
-        echo "     --output - | \\"
-        echo "   sudo cryptsetup luksAddKey /dev/sdXY -"
+        echo "     --output /tmp/key.bin"
+        echo "   sudo cryptsetup luksAddKey /dev/sdXY /tmp/key.bin"
+        echo "   sudo shred -u /tmp/key.bin"
         echo ""
         echo "2. Ensure /etc/crypttab has 'initramfs' option:"
         echo "   <target> UUID=<uuid> none luks,discard,initramfs"
@@ -54,7 +55,6 @@ EOF
         echo "Documentation: /usr/share/doc/tkey-luks/"
         echo "Setup Guide: /usr/share/doc/tkey-luks/SETUP.md"
         echo "Security: /usr/share/doc/tkey-luks/SECURITY.md"
-        echo "USS Derivation: /usr/share/doc/tkey-luks/USS-DERIVATION.md"
         echo ""
         ;;
         
