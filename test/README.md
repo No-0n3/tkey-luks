@@ -9,6 +9,9 @@ test/
 ├── test-improved-uss.sh        # Hardware USS derivation test (requires TKey)
 ├── test-uss-derivation.sh      # USS derivation unit tests (no TKey needed)
 ├── test-tkey-unlock.sh         # Boot unlock testing with TKey
+├── test-build-and-install.sh   # Full build and installation test (Docker or local)
+├── test-debian-package.sh      # Test .deb installation in Docker container
+├── test-with-act.sh            # Test GitHub Actions workflow locally
 └── luks-setup/                 # LUKS test image utilities
     ├── create-tkey-test-image.sh   # Create 100MB LUKS2 test image
     ├── add-tkey-key.sh             # Enroll TKey with USS derivation
@@ -17,6 +20,21 @@ test/
 ```
 
 ## Quick Start
+
+### Package Installation Tests (CI/CD Simulation)
+
+```bash
+# Test full build and Debian package installation (recommended)
+./test-build-and-install.sh
+
+# Test with GitHub Actions locally (requires 'act' tool)
+./test-with-act.sh
+
+# Quick package test only (requires pre-built .deb)
+./test-debian-package.sh
+```
+
+Simulates the GitHub Actions release workflow locally using Docker.
 
 ### USS Derivation Tests (No Hardware Required)
 
@@ -97,7 +115,109 @@ cd luks-setup
 - tkey-luks-client built
 - Device app binary at `../device-app/tkey-luks-device.bin`
 
-### 3. test-tkey-unlock.sh
+### 3. test-build-and-install.sh
+
+**Purpose:** Full build and installation test (simulates GitHub Actions)
+
+**Tests:**
+
+- Complete build process (client + device app)
+- Debian package creation
+- Package installation in Docker container
+- File installation verification
+- Binary functionality
+- Initramfs integration
+
+**Usage:**
+
+```bash
+# Full test with Docker (safest, most accurate)
+./test-build-and-install.sh
+
+# Skip build step (test existing binaries)
+./test-build-and-install.sh --skip-build
+
+# Test on local system (requires root, modifies system)
+sudo ./test-build-and-install.sh --method local
+
+# Keep package after test
+./test-build-and-install.sh --keep-package
+```
+
+**Requirements:**
+
+- Docker (for default method)
+- debhelper, devscripts, build-essential (for package build)
+- Root access (for local installation method only)
+
+**Test Methods:**
+
+- `docker` (default): Test in Ubuntu 24.04 container (safest)
+- `local`: Install on local system (requires root)
+- `mock`: Just verify package structure
+
+### 4. test-debian-package.sh
+
+**Purpose:** Quick Debian package installation test in Docker
+
+**Tests:**
+
+- Package installation with dpkg
+- File presence verification
+- Executable permissions
+- Documentation installation
+- Initramfs script validation
+
+**Usage:**
+
+```bash
+# Build package first
+cd /home/isaac/Development/tkey-luks
+dpkg-buildpackage -b -uc -us
+
+# Test the package
+./test/test-debian-package.sh
+```
+
+**Requirements:**
+
+- Docker
+- Pre-built .deb package in parent directory
+
+### 5. test-with-act.sh
+
+**Purpose:** Test GitHub Actions workflow locally using 'act'
+
+**Tests:**
+
+- Complete GitHub Actions workflow simulation
+- Build and package job
+- Installation test job
+- Artifact handling
+
+**Usage:**
+
+```bash
+# Install act first
+curl https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
+
+# Test the workflow
+./test-with-act.sh
+
+# Test specific job
+./test-with-act.sh --job build-and-package
+
+# List available jobs
+./test-with-act.sh --list
+```
+
+**Requirements:**
+
+- act (GitHub Actions local runner)
+- Docker
+- ~10GB disk space for runner images
+
+### 6. test-tkey-unlock.sh
 
 **Purpose:** Boot-time unlock testing
 
@@ -109,7 +229,7 @@ cd luks-setup
 
 **Requirements:** TKey device, LUKS partition configured
 
-### 4. luks-setup/ Scripts
+### 7. luks-setup/ Scripts
 
 See [luks-setup/README.md](luks-setup/README.md) for detailed documentation on:
 
