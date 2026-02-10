@@ -64,6 +64,21 @@ echo ""
 
 OUTPUT_FILE="/tmp/tkey-uss-test.bin"
 
+# Find tkey-luks-client
+if [ -x /usr/sbin/tkey-luks-client ]; then
+    TKEY_CLIENT=/usr/sbin/tkey-luks-client
+elif [ -x ../client/tkey-luks-client ]; then
+    TKEY_CLIENT=../client/tkey-luks-client
+elif [ -x /usr/local/bin/tkey-luks-client ]; then
+    TKEY_CLIENT=/usr/local/bin/tkey-luks-client
+else
+    echo -e "${RED}✗ tkey-luks-client not found${NC}"
+    echo "Build it first: cd ../client && make"
+    exit 1
+fi
+echo -e "${GREEN}✓ Using client: $TKEY_CLIENT${NC}"
+echo ""
+
 echo -e "${YELLOW}[2/5] Deriving USS from password using PBKDF2...${NC}"
 echo -e "${YELLOW}[3/5] Loading device app with derived USS...${NC}"
 echo -e "${YELLOW}[4/5] Sending challenge to TKey...${NC}"
@@ -72,14 +87,14 @@ echo ""
 echo -e "${CYAN}👉 You will need to TOUCH the TKey when it blinks!${NC}"
 echo ""
 
-if echo "$TEST_PASSWORD" | ./tkey-luks-client \
+if echo "$TEST_PASSWORD" | "$TKEY_CLIENT" \
     --challenge-from-stdin \
     --derive-uss \
     --device /dev/ttyACM0 \
     --device-app "$DEVICE_APP" \
     --output "$OUTPUT_FILE" \
     --verbose 2>&1 | grep -E "USS|machine-id|Connecting|Loading|Waiting|touch|derived|Key written" ||  \
-   echo "$TEST_PASSWORD" | ./tkey-luks-client \
+   echo "$TEST_PASSWORD" | "$TKEY_CLIENT" \
     --challenge-from-stdin \
     --derive-uss \
     --device /dev/ttyACM0 \
