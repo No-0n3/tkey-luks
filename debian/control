@@ -29,16 +29,18 @@ Description: Tillitis TKey-based LUKS disk encryption unlock
  authentication system combining:
   - Something you have: Physical TKey device (contains UDS hardware secret)
   - Something you know: Password (used twice: USS derivation + BLAKE2b)
-    - System-unique: Machine identity (machine-id salt)
+  - System-unique: Machine identity (machine-id salt)
  .
- Key features:
+ Key features (v1.1.1):
   - Improved USS derivation using PBKDF2 (no USS files on disk)
+  - Consistent salt availability across setup and boot
   - Cryptographic boot-time unlock via initramfs hooks
   - Touch-to-unlock physical authentication
   - Multi-layer key derivation (USS → CDI → BLAKE2b)
   - Compatible with LUKS1 and LUKS2
+  - Comprehensive security documentation and troubleshooting
  .
  This package includes:
   - tkey-luks-client: Client application for key derivation
   - TKey device application: Firmware for hardware key operations
-  - Initramfs hooks: Boot-time integration scripts
+  - Initramfs hooks: Boot-time integration scripts with salt management
