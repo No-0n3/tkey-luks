@@ -1,0 +1,12 @@
+[
+  {
+    "directory": "/home/isaac/Development/tkey-luks/device-app",
+    "command": "clang -target riscv32-unknown-none-elf -march=rv32iczmmul -mabi=ilp32 -mcmodel=medany -static -std=gnu99 -O2 -ffast-math -ffreestanding -fno-common -fno-builtin-printf -fno-builtin-putchar -nostdlib -mno-relax -flto -Wall -Werror=implicit-function-declaration -I../submodules/tkey-libs/include -I../submodules/tkey-libs -c /home/isaac/Development/tkey-luks/device-app/src/main.c -o /home/isaac/Development/tkey-luks/device-app/src/main.o",
+    "file": "/home/isaac/Development/tkey-luks/device-app/src/main.c"
+  },
+  {
+    "directory": "/home/isaac/Development/tkey-luks/device-app",
+    "command": "clang -target riscv32-unknown-none-elf -march=rv32iczmmul -mabi=ilp32 -mcmodel=medany -static -std=gnu99 -O2 -ffast-math -ffreestanding -fno-common -fno-builtin-printf -fno-builtin-putchar -nostdlib -mno-relax -flto -Wall -Werror=implicit-function-declaration -I../submodules/tkey-libs/include -I../submodules/tkey-libs -c /home/isaac/Development/tkey-luks/device-app/src/app_proto.c -o /home/isaac/Development/tkey-luks/device-app/src/app_proto.o",
+    "file": "/home/isaac/Development/tkey-luks/device-app/src/app_proto.c"
+  }
+]

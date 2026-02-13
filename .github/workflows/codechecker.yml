@@ -1,0 +1,168 @@
+name: CodeChecker Static Analysis
+
+on:
+  push:
+    # Run on any push to any branch
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+
+jobs:
+  codechecker-analysis:
+    name: CodeChecker SAST
+    runs-on: ubuntu-24.04
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            llvm \
+            lld
+      
+      - name: Build device application (generate compile_commands.json)
+        run: |
+          cd device-app
+          make clean || true
+          make
+          
+          # Verify compile_commands.json exists
+          ls -lh ../compile_commands.json
+      
+      - name: Run CodeChecker analysis
+        uses: whisperity/codechecker-analysis-action@v1
+        id: codechecker
+        with:
+          logfile: ${{ github.workspace }}/compile_commands.json
+          llvm-version: 'latest'
+          ctu: false
+          config: ${{ github.workspace }}/.codechecker.json
+      
+      - name: Run CodeChecker analysis
+        uses: whisperity/codechecker-analysis-action@v1
+        id: codechecker
+        with:
+          logfile: ${{ github.workspace }}/compile_commands.json
+          llvm-version: 'latest'
+          ctu: false
+          config: ${{ github.workspace }}/.codechecker.json
+      
+      - name: Check outputs and summary
+        run: |
+          echo "## 📊 CodeChecker Analysis Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **CodeChecker Version:** ${{ steps.codechecker.outputs.codechecker-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **LLVM Version:** ${{ steps.codechecker.outputs.llvm-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Warnings Found:** ${{ steps.codechecker.outputs.warnings }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Results Directory:** \`${{ steps.codechecker.outputs.result-html-dir }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Show result log for visibility
+          if [ -f "${{ steps.codechecker.outputs.result-log }}" ]; then
+            echo "### Analysis Results" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            head -50 "${{ steps.codechecker.outputs.result-log }}" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+      
+      - name: Check for security issues
+        id: security_check
+        run: |
+          RESULT_LOG="${{ steps.codechecker.outputs.result-log }}"
+          
+          if [ ! -f "$RESULT_LOG" ]; then
+            echo "security_issues=0" >> $GITHUB_OUTPUT
+            echo "⚠️ No result log found"
+            exit 0
+          fi
+          
+          # Count HIGH/MEDIUM severity security-related issues
+          # Look for lines containing security, cert, or bugprone checkers with HIGH/MEDIUM severity
+          SECURITY_COUNT=$(grep -iE "(HIGH|MEDIUM).*(security|cert\.|bugprone)" "$RESULT_LOG" | wc -l || echo "0")
+          
+          echo "security_issues=$SECURITY_COUNT" >> $GITHUB_OUTPUT
+          echo "🔒 Found $SECURITY_COUNT HIGH/MEDIUM security-related issues"
+          
+          if [ "$SECURITY_COUNT" -gt 0 ]; then
+            echo "### ⚠️ Security Issues Found:" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -iE "(HIGH|MEDIUM).*(security|cert\.|bugprone)" "$RESULT_LOG" | head -20 >> $GITHUB_STEP_SUMMARY || true
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+      
+      - name: Upload CodeChecker reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: codechecker-reports
+          path: |
+            ${{ steps.codechecker.outputs.result-html-dir }}
+            ${{ steps.codechecker.outputs.result-log }}
+            ${{ steps.codechecker.outputs.analyze-output }}
+          retention-days: 30
+      
+      - name: Comment on PR with results
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const warnings = '${{ steps.codechecker.outputs.warnings }}';
+            const securityIssues = '${{ steps.security_check.outputs.security_issues }}';
+            const htmlDir = '${{ steps.codechecker.outputs.result-html-dir }}';
+            
+            let comment = '## 🔍 CodeChecker Static Analysis Results\n\n';
+            
+            if (warnings === 'true') {
+              comment += '⚠️ **Static analysis warnings detected**\n\n';
+              
+              if (securityIssues !== '0') {
+                comment += `🔒 **Security Issues:** ${securityIssues} HIGH/MEDIUM severity security-related issues found\n\n`;
+                comment += '❌ **Action Required:** Please review and fix security issues before merging.\n\n';
+              }
+            } else {
+              comment += '✅ **No warnings found** - Great job!\n\n';
+            }
+            
+            comment += `### Details\n\n`;
+            comment += `- **CodeChecker Version:** ${{ steps.codechecker.outputs.codechecker-version }}\n`;
+            comment += `- **LLVM Version:** ${{ steps.codechecker.outputs.llvm-version }}\n`;
+            comment += `- **Warnings:** ${warnings}\n\n`;
+            comment += '📦 **Full HTML reports** available in workflow artifacts: [Download Reports](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})\n';
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+      
+      - name: Fail on security issues
+        if: steps.security_check.outputs.security_issues != '0'
+        run: |
+          SECURITY_COUNT="${{ steps.security_check.outputs.security_issues }}"
+          echo "❌ FAILED: Found $SECURITY_COUNT HIGH/MEDIUM security issues"
+          echo "❌ Security gate: New security issues must be fixed before merging"
+          echo ""
+          echo "::error title=Security Issues Found::Found $SECURITY_COUNT HIGH/MEDIUM severity security-related issues. Review the uploaded artifacts for details."
+          exit 1
+      
+      - name: Warn on any findings
+        if: steps.codechecker.outputs.warnings == 'true' && steps.security_check.outputs.security_issues == '0'
+        run: |
+          echo "⚠️ WARNING: Static analysis found issues (non-security)"
+          echo "ℹ️ Consider reviewing and fixing these issues"
+          echo ""
+          echo "::warning title=Code Quality Issues::Static analysis found issues. While not blocking, consider reviewing them for code quality improvements."
