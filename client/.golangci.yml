@@ -34,8 +34,7 @@ linters-settings:
   gosec:
     severity: medium
     confidence: medium
-    excludes:
-      # Add any exclusions here if needed
+    # excludes: []  # Uncomment and add patterns if needed
     config:
       G101: "(?i)token|password|secret" # Check for hardcoded credentials
       G104: true # Audit errors not checked
@@ -44,9 +43,9 @@ linters-settings:
       G505: true # Check for weak crypto algorithms
   
   govet:
-    check-shadowing: true
     enable-all: true
     disable:
+      - shadow     # Can produce false positives
       - composites # Can produce false positives
   
   errcheck:

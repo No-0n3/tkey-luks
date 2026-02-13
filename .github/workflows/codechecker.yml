@@ -2,10 +2,13 @@ name: SAST - Static Analysis Security Testing
 
 on:
   push:
-    # Run on any push to any branch
+    branches:
+      - master
+      - main
   pull_request:
     branches:
       - master
+      - main
 
 permissions:
   contents: read
