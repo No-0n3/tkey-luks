@@ -36,7 +36,8 @@ linters-settings:
     confidence: medium
     # excludes: []  # Uncomment and add patterns if needed
     config:
-      G101: "(?i)token|password|secret" # Check for hardcoded credentials
+      G101:
+        pattern: "(?i)token|password|secret" # Check for hardcoded credentials
       G104: true # Audit errors not checked
       G401: true # Detect weak crypto (MD5, SHA1, DES)
       G501: true # Blacklist weak crypto imports
