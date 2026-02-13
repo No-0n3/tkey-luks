@@ -13,6 +13,7 @@
 7. [Troubleshooting](#troubleshooting)
 8. [Best Practices](#best-practices)
 9. [Compliance & Audit](#compliance--audit)
+10. [Static Analysis & Code Security](#static-analysis--code-security)
 
 ---
 
@@ -733,6 +734,227 @@ sudo update-initramfs -u -k all
    - [ ] Review security posture quarterly
    - [ ] Update firmware as available
    - [ ] Rotate keys per schedule
+
+---
+
+## Static Analysis & Code Security
+
+### CodeChecker Integration
+
+TKey-LUKS uses **CodeChecker** for continuous static analysis to detect security vulnerabilities, bugs, and code quality issues before they reach production. This provides an additional layer of security beyond manual code review.
+
+#### What is CodeChecker?
+
+[CodeChecker](https://codechecker.readthedocs.io/) is a static analysis infrastructure that:
+
+- Runs multiple analyzers (Clang-Tidy, Clang Static Analyzer, Cppcheck)
+- Detects security vulnerabilities (CWE, CERT guidelines)
+- Identifies memory safety issues (buffer overflows, null pointers)
+- Finds undefined behavior and logic errors
+- Tracks issues over time with baseline comparison
+
+#### Automated Security Gate
+
+The CodeChecker workflow runs automatically on:
+
+- **Pull Requests** - Prevents merging code with new security issues
+- **Pushes to main branches** - Continuous monitoring of code quality
+- **Pre-release builds** - Verification before deployment
+
+**Security Policy:**
+- ❌ **Blocks merge** if new HIGH/MEDIUM security issues are detected
+- ⚠️ **Warns** on any new issues compared to baseline
+- ✅ **Passes** if no new issues or only minor improvements
+
+#### Enabled Security Checks
+
+The CodeChecker analysis includes:
+
+**Security-Focused Analyzers:**
+- `security.*` - Security-related checkers
+- `cert.*` - CERT C/C++ Secure Coding Standard
+- `bugprone.*` - Common programming errors
+- `concurrency.*` - Thread safety issues
+
+**Memory Safety:**
+- Buffer overflow detection
+- Null pointer dereference
+- Use-after-free
+- Memory leaks
+- Double-free issues
+
+**Undefined Behavior:**
+- Integer overflow
+- Uninitialized variables
+- Division by zero
+- Signed integer overflow
+
+#### Local Development
+
+**Run CodeChecker locally before pushing:**
+
+```bash
+# Install CodeChecker (one-time setup)
+python3 -m venv ~/codechecker_env
+source ~/codechecker_env/bin/activate
+pip install codechecker
+
+# Build and analyze (from project root)
+cd device-app
+make clean && make
+cd ..
+
+# Run analysis using project configuration
+CodeChecker analyze \
+  --output ./codechecker_reports \
+  --config .codechecker.json \
+  compile_commands.json
+
+# View results
+CodeChecker parse ./codechecker_reports
+
+# Export HTML report
+CodeChecker parse \
+  --export html \
+  --output ./codechecker_html \
+  ./codechecker_reports
+
+# Open HTML report in browser
+xdg-open ./codechecker_html/index.html
+```
+
+**Using the workflow configuration:**
+
+The project includes a `.codechecker.json` configuration file that specifies:
+- Enabled analyzers (security, cert, bugprone, etc.)
+- Checker configurations
+- Analysis timeout and parallelism settings
+
+This ensures consistency between local analysis and CI/CD.
+
+#### Baseline Management
+
+The project maintains a **baseline file** (`reports.baseline`) containing known issues that have been reviewed and accepted. This allows the team to:
+
+1. Focus on **new issues** introduced by code changes
+2. Track security improvements over time
+3. Prevent regression of fixed issues
+4. Document accepted risks
+
+**Note:** The current workflow uses the GitHub Action which generates fresh analysis on each run. For baseline comparison, you can run locally:
+
+```bash
+# Generate current baseline
+CodeChecker parse \
+  --export baseline \
+  --output reports.baseline \
+  ./codechecker_reports
+
+# Compare future runs against baseline
+CodeChecker parse \
+  --baseline reports.baseline \
+  ./new_codechecker_reports
+```
+
+**Updating the baseline** (maintainers only) - After reviewing and accepting findings, commit the updated baseline file to the repository.
+
+#### CI/CD Workflow
+
+The `.github/workflows/codechecker.yml` workflow uses the official **CodeChecker GitHub Action** ([whisperity/codechecker-analysis-action](https://github.com/whisperity/CodeChecker-Action)):
+
+1. **Builds** the project to generate `compile_commands.json`
+2. **Analyzes** code using CodeChecker with `.codechecker.json` configuration
+3. **Filters** for HIGH/MEDIUM security issues
+4. **Fails** if security issues are found
+5. **Reports** findings in PR comments and job summaries
+6. **Uploads** detailed HTML reports as artifacts
+
+**GitHub Action Benefits:**
+- Automatic LLVM/Clang installation
+- Consistent analysis environment
+- Built-in HTML report generation
+- Easy configuration via `.codechecker.json`
+- Maintained by the CodeChecker community
+
+**Viewing Results:**
+
+- Check the **Actions** tab on GitHub
+- Download **codechecker-reports** artifacts
+- Open `codechecker_html_report/index.html` in browser
+- Review JSON reports for programmatic analysis
+
+#### Suppressing False Positives
+
+If CodeChecker reports a false positive:
+
+```c
+// In source code, use annotations
+// codechecker_suppress [checker.name] Justification for suppression
+potentially_flagged_function();
+```
+
+**Requirements for suppressions:**
+- Must include clear justification
+- Requires security team review
+- Document in code review discussion
+- Prefer fixing over suppressing
+
+#### Security Issue Severity
+
+CodeChecker classifies issues by severity:
+
+- **CRITICAL** - Immediate security risk (CVE-level)
+- **HIGH** - Security vulnerability or memory corruption
+- **MEDIUM** - Potential security issue or code smell
+- **LOW** - Minor issues or style violations
+- **STYLE** - Coding standard violations
+
+**Build Policy:**
+- CRITICAL/HIGH: Always block merge
+- MEDIUM: Block if security-related
+- LOW: Warning only
+- STYLE: Informational
+
+#### Continuous Improvement
+
+**Security debt management:**
+
+1. **Weekly**: Review new CodeChecker findings
+2. **Monthly**: Reduce baseline issue count by 10%
+3. **Quarterly**: Security audit of all HIGH severity issues
+4. **Yearly**: Full codebase security review
+
+**Metrics tracked:**
+- Total issues (by severity)
+- New issues per PR
+- Issue resolution time
+- Security fixes per release
+- Code coverage improvement
+
+#### Integration with Development
+
+**Pre-commit hooks** (optional):
+
+```bash
+# Add to .git/hooks/pre-commit
+#!/bin/bash
+make -C device-app clean
+make -C device-app
+CodeChecker analyze --output /tmp/cc_reports compile_commands.json
+CodeChecker parse --baseline reports.baseline /tmp/cc_reports
+if [ $? -ne 0 ]; then
+    echo "❌ CodeChecker found new issues. Fix them before committing."
+    exit 1
+fi
+```
+
+#### Additional Resources
+
+- **CodeChecker Documentation**: <https://codechecker.readthedocs.io/>
+- **CERT C Coding Standards**: <https://wiki.sei.cmu.edu/confluence/display/c>
+- **CWE Database**: <https://cwe.mitre.org/>
+- **Clang Static Analyzer**: <https://clang-analyzer.llvm.org/>
+- **Project Reports**: See `reports/` directory for latest analysis
 
 ---
 
