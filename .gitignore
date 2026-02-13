@@ -68,7 +68,12 @@ codechecker_html_report/
 analysis_report.md
 diff_output.json
 security_issues.json
+parse_output.json
 parse_output.txt
 full_report.txt
 new_issues_summary.txt
 codechecker_env/
+*.sarif
+codechecker.sarif
+golangci-report.sarif
+golangci-report.json
