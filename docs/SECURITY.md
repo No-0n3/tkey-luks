@@ -761,11 +761,9 @@ sudo update-initramfs -u -k all
 
 ## Static Analysis & Code Security
 
-### CodeChecker Integration
+TKey-LUKS uses comprehensive static analysis to detect security vulnerabilities, bugs, and code quality issues before they reach production. This provides an additional layer of security beyond manual code review.
 
-TKey-LUKS uses **CodeChecker** for continuous static analysis to detect security vulnerabilities, bugs, and code quality issues before they reach production. This provides an additional layer of security beyond manual code review.
-
-#### What is CodeChecker?
+### CodeChecker Integration (C/C++ Device Code)
 
 [CodeChecker](https://codechecker.readthedocs.io/) is a static analysis infrastructure that:
 
@@ -891,10 +889,12 @@ The `.github/workflows/codechecker.yml` workflow uses the official **CodeChecker
 
 1. **Builds** the project to generate `compile_commands.json`
 2. **Analyzes** code using CodeChecker with `.codechecker.json` configuration
-3. **Filters** for HIGH/MEDIUM security issues
-4. **Fails** if security issues are found
-5. **Reports** findings in PR comments and job summaries
-6. **Uploads** detailed HTML reports as artifacts
+3. **Converts** results to SARIF format
+4. **Uploads** SARIF to GitHub Security tab (Code scanning alerts)
+5. **Filters** for HIGH/MEDIUM security issues
+6. **Fails** if security issues are found
+7. **Reports** findings in PR comments and job summaries
+8. **Uploads** detailed HTML reports as artifacts
 
 **GitHub Action Benefits:**
 
@@ -906,19 +906,150 @@ The `.github/workflows/codechecker.yml` workflow uses the official **CodeChecker
 
 **Viewing Results:**
 
-- Check the **Actions** tab on GitHub
-- Download **codechecker-reports** artifacts
-- Open `codechecker_html_report/index.html` in browser
-- Review JSON reports for programmatic analysis
+- **Security Tab**: Check the **Security** → **Code scanning alerts** tab on GitHub for SARIF reports
+- **Actions Tab**: Check the **Actions** tab for workflow runs
+- **Artifacts**: Download **codechecker-reports** artifacts
+- **HTML Reports**: Open `codechecker_html_report/index.html` in browser
+- **JSON Reports**: Review for programmatic analysis
+
+### golangci-lint Integration (Go Client Code)
+
+[golangci-lint](https://golangci-lint.run/) is a comprehensive Go linters aggregator that provides fast, parallel analysis with extensive security checks.
+
+#### What is golangci-lint?
+
+golangci-lint runs multiple linters simultaneously and provides:
+
+- **Security Analysis**: gosec for security vulnerabilities
+- **Static Analysis**: govet, staticcheck for code correctness
+- **Error Handling**: errcheck for unchecked errors
+- **Code Quality**: revive, gocyclo for maintainability
+- **Crypto Security**: Detection of weak cryptographic algorithms
+- **Resource Management**: Checks for unclosed resources
+
+#### Enabled Security Linters
+
+The `.golangci.yml` configuration in the `client/` folder enables:
+
+**Security-Focused:**
+
+- `gosec` - Security issues (G101-G505 rules)
+  - Hardcoded credentials detection
+  - Weak crypto algorithms (MD5, SHA1, DES)
+  - SQL injection vulnerabilities
+  - Command injection risks
+  - Integer overflow conditions
+- `govet` - Go standard static analysis
+- `errcheck` - Unchecked error returns
+- `staticcheck` - Advanced static analysis
+
+**Code Quality:**
+
+- `gofmt`, `goimports` - Code formatting
+- `revive` - Fast, configurable linter
+- `gocyclo` - Cyclomatic complexity (threshold: 15)
+- `dupl` - Code duplication detection
+- `bodyclose` - HTTP response body must be closed
+- `rowserrcheck` - SQL rows.Err must be checked
+
+#### Local Development (Go)
+
+**Run golangci-lint locally before pushing:**
+
+```bash
+cd client
+
+# Run with project configuration
+golangci-lint run --config=.golangci.yml
+
+# Run specific linters
+golangci-lint run --enable gosec,govet,errcheck
+
+# Fix auto-fixable issues
+golangci-lint run --fix
+```
+
+#### CI/CD Workflow (Go)
+
+The SAST workflow includes a dedicated `golangci-lint` job that:
+
+1. **Checks out** code and sets up Go environment
+2. **Runs** golangci-lint with `.golangci.yml` configuration
+3. **Generates** JSON and SARIF format reports
+4. **Uploads** SARIF to GitHub Security tab (Code scanning alerts)
+5. **Parses** results to identify security issues (gosec)
+6. **Fails** if security vulnerabilities are found
+7. **Comments** on PRs with findings summary
+8. **Uploads** JSON/SARIF reports as artifacts
+
+**Security Policy:**
+
+- ❌ **Blocks merge** if gosec finds security vulnerabilities
+- ⚠️ **Warns** on code quality issues (non-blocking)
+- ✅ **Passes** if no issues found
+
+**GitHub Action Used:** [golangci/golangci-lint-action@v6](https://github.com/golangci/golangci-lint-action)
+
+#### Common Security Issues Detected
+
+**gosec Rules (G-series):**
+
+- **G101**: Hardcoded credentials
+
+  ```go
+  password := "secret123"  // FAIL
+  ```
+
+- **G104**: Unaudited errors
+
+  ```go
+  file.Close()  // FAIL - should check error
+  defer file.Close()  // OK with defer if confident
+  ```
+
+- **G401**: Weak crypto (MD5, SHA-1)
+
+  ```go
+  import "crypto/md5"  // FAIL - use SHA256+
+  ```
+
+- **G501**: Blacklisted imports (weak crypto)
+- **G505**: Weak key generation algorithms
+
+#### Viewing Results
+
+- **Security Tab**: Check **Security** → **Code scanning alerts** for SARIF reports
+- **GitHub Actions**: Check the workflow run status
+- **Artifacts**: Download `golangci-lint-reports` artifact
+- **JSON Report**: `golangci-report.json` contains detailed findings
+- **SARIF Report**: `golangci-report.sarif` uploaded to Security tab
+- **PR Comments**: Automatic summary posted on pull requests
 
 #### Suppressing False Positives
 
-If CodeChecker reports a false positive:
+**For CodeChecker (C/C++):**
 
 ```c
 // In source code, use annotations
 // codechecker_suppress [checker.name] Justification for suppression
 potentially_flagged_function();
+```
+
+**For golangci-lint (Go):**
+
+```go
+// Inline suppression with nolint directive
+password := getPasswordFromSecureSource() //nolint:gosec // G101: password read from secure vault, not hardcoded
+
+// Suppress for entire function
+//nolint:gocyclo // Complex logic required for state machine
+func complexStateHandler() {
+    // ...
+}
+
+// Suppress specific linter
+//nolint:errcheck // Error intentionally ignored - best effort cleanup
+defer os.Remove(tempFile)
 ```
 
 **Requirements for suppressions:**

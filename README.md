@@ -1,7 +1,7 @@
 # TKey-LUKS: Hardware-Based LUKS Unlock with Tillitis TKey
 
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-%23FE5196?logo=conventionalcommits&logoColor=white)](https://conventionalcommits.org)
-[![CodeChecker](https://img.shields.io/badge/CodeChecker-SAST-blue?logo=llvm&logoColor=white)](https://github.com/No-0n3/tkey-luks/actions/workflows/codechecker.yml)
+[![SAST](https://img.shields.io/badge/SAST-CodeChecker%20%2B%20golangci--lint-blue?logo=llvm&logoColor=white)](https://github.com/No-0n3/tkey-luks/actions/workflows/codechecker.yml)
 
 Unlock LUKS encrypted root partitions at boot using Tillitis TKey hardware security key.
 
@@ -18,7 +18,7 @@ This project provides a secure mechanism to unlock LUKS encrypted root partition
 - 🧪 **Test Environment**: Hardware and image-based test scripts
 - 📦 **Easy Installation**: Automated installation scripts
 - 🔄 **Fallback Support**: Optional password fallback
-- 🛡️ **Static Analysis**: Continuous security scanning with CodeChecker (blocks PRs with security issues)
+- 🛡️ **Static Analysis**: Continuous security scanning with CodeChecker (C/C++) and golangci-lint (Go) - blocks PRs with security issues
 - ✅ **Conventional Commits**: Strict commit standards enforced via CI and git hooks
 
 ## Security Highlights
