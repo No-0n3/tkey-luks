@@ -804,7 +804,7 @@ cd device-app
 make clean && make
 cd ..
 
-# Run analysis using project configuration
+# Run analysis using project configuration (.codechecker.json)
 CodeChecker analyze \
   --output ./codechecker_reports \
   --config .codechecker.json \
@@ -826,11 +826,11 @@ xdg-open ./codechecker_html/index.html
 **Using the workflow configuration:**
 
 The project includes a `.codechecker.json` configuration file that specifies:
-- Enabled analyzers (security, cert, bugprone, etc.)
+- Enabled analyzers (security, cert, bugprone, SEI CERT C, etc.)
 - Checker configurations
 - Analysis timeout and parallelism settings
 
-This ensures consistency between local analysis and CI/CD.
+This ensures **consistency between local analysis and CI/CD** - both use the same configuration file automatically. The `--config .codechecker.json` flag tells CodeChecker to use the project's settings.
 
 #### Baseline Management
 
