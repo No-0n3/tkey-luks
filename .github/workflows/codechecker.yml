@@ -51,15 +51,6 @@ jobs:
           ctu: false
           config: ${{ github.workspace }}/.codechecker.json
       
-      - name: Run CodeChecker analysis
-        uses: whisperity/codechecker-analysis-action@v1
-        id: codechecker
-        with:
-          logfile: ${{ github.workspace }}/compile_commands.json
-          llvm-version: 'latest'
-          ctu: false
-          config: ${{ github.workspace }}/.codechecker.json
-      
       - name: Check outputs and summary
         run: |
           echo "## 📊 CodeChecker Analysis Complete" >> $GITHUB_STEP_SUMMARY

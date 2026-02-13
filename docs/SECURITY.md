@@ -160,12 +160,14 @@ Stage 5: Volume Unlock
 The password is used in **two independent cryptographic operations**:
 
 - **USS Derivation** (affects TKey CDI):
+
   ```text
   USS = PBKDF2(password, system_salt, 100k iterations)
   CDI = Hash(UDS ⊕ Device_App ⊕ USS)
   ```
 
 - **Challenge Data** (affects BLAKE2b):
+
   ```text
   secret_key = Ed25519_derive(CDI)  // Contains USS
   LUKS_key = BLAKE2b(key=secret_key, data=password)
@@ -246,11 +248,11 @@ tkey-luks-client \
 **Performance Guide:**
 
 | Iterations | Security | Boot Delay |
-|-----------|----------|------------|
-| 100,000   | Good     | ~100ms     |
-| 200,000   | Better   | ~200ms     |
-| 500,000   | Best     | ~500ms     |
-| 1,000,000 | Overkill | ~1s        |
+|------------|----------|------------|
+| 100,000    | Good     | ~100ms     |
+| 200,000    | Better   | ~200ms     |
+| 500,000    | Best     | ~500ms     |
+| 1,000,000  | Overkill | ~1s        |
 
 ### Backward Compatibility (Deprecated)
 
@@ -271,6 +273,7 @@ tkey-luks-client \
 ### For New Installations
 
 1. **Build and Install** with new code:
+
    ```bash
    ./scripts/build-all.sh
    sudo make -C client install
@@ -279,6 +282,7 @@ tkey-luks-client \
    ```
 
 2. **Add LUKS Key** using derived USS:
+
    ```bash
    echo "your-password" | sudo tkey-luks-client \
      --challenge-from-stdin \
@@ -289,6 +293,7 @@ tkey-luks-client \
    ```
 
 3. **Update initramfs**:
+
    ```bash
    sudo update-initramfs -u -k all
    # Look for: "✓ Copied machine-id for USS derivation"
@@ -348,10 +353,10 @@ Keep both old USS file key and new derived USS key for a transition period:
 
 **Defense:**
 
-| Approach | USS Stored? | Extractable? | Result |
-|----------|-------------|--------------|--------|
-| v1.0.x (OLD) | Yes (`/boot/initramfs`) | ✗ Yes | 3-factor → 1-factor |
-| v1.1.0+ (NEW) | No (derived) | ✓ No | Remains 3-factor |
+| Approach      | USS Stored?             | Extractable? | Result               |
+|---------------|-------------------------|--------------|----------------------|
+| v1.0.x (OLD)  | Yes (`/boot/initramfs`) | ✗ Yes        | 3-factor → 1-factor  |
+| v1.1.0+ (NEW) | No (derived)            | ✓ No         | Remains 3-factor     |
 
 **Mitigation (v1.1.0+):** USS is ephemeral, derived at boot time  
 **Residual Risk:** If TKey also stolen AND attacker guesses password
@@ -361,6 +366,7 @@ Keep both old USS file key and new derived USS key for a transition period:
 **Attack:** Attacker modifies bootloader while device unattended
 
 **Mitigation:**
+
 - Enable Secure Boot (prevents unsigned bootloader)
 - TPM-based boot integrity measurements
 - Physical security (tamper-evident seals)
@@ -374,10 +380,10 @@ Keep both old USS file key and new derived USS key for a transition period:
 
 **Defense:**
 
-| Approach | USS Location | Root Access Impact |
-|----------|--------------|-------------------|
-| v1.0.x (OLD) | `/boot/initramfs-uss/` | ✗ Can extract USS |
-| v1.1.0+ (NEW) | Not stored | ✓ Nothing to extract |
+| Approach      | USS Location           | Root Access Impact    |
+|---------------|------------------------|-----------------------|
+| v1.0.x (OLD)  | `/boot/initramfs-uss/` | ✗ Can extract USS     |
+| v1.1.0+ (NEW) | Not stored             | ✓ Nothing to extract  |
 
 **Mitigation (v1.1.0+):** USS derived from password at boot time  
 **Residual Risk:** Root access can install keylogger (need secure boot + tamper detection)
@@ -387,6 +393,7 @@ Keep both old USS file key and new derived USS key for a transition period:
 **Attack:** Attacker attempts to clone TKey by extracting UDS
 
 **Mitigation:**
+
 - TKey secrets are hardware-protected (cannot extract UDS)
 - Even with USS + password, need physical TKey hardware
 - Touch requirement prevents automation
@@ -399,12 +406,13 @@ Keep both old USS file key and new derived USS key for a transition period:
 
 **Defense:**
 
-| Approach | Vulnerable Assets | Impact |
-|----------|------------------|---------|
-| v1.0.x (OLD) | USS file in plaintext | ✗ Firmware reads USS → bypass |
-| v1.1.0+ (NEW) | USS derived in memory | ✓ No file to backdoor |
+| Approach      | Vulnerable Assets      | Impact                        |
+|---------------|------------------------|-------------------------------|
+| v1.0.x (OLD)  | USS file in plaintext  | ✗ Firmware reads USS → bypass |
+| v1.1.0+ (NEW) | USS derived in memory  | ✓ No file to backdoor         |
 
 **Mitigation (v1.1.1+):**
+
 - USS never touches filesystem
 - Firmware signing and attestation
 - Secure boot chain verification
@@ -416,6 +424,7 @@ Keep both old USS file key and new derived USS key for a transition period:
 **Attack:** Intercept USB communication between client and TKey
 
 **Mitigation:**
+
 - Challenge-response protocol prevents replay
 - LUKS key derived on TKey, never transmitted over USB
 - USS derived before TKey communication (not sent)
@@ -428,6 +437,7 @@ Keep both old USS file key and new derived USS key for a transition period:
 **Attack:** Use DMA-capable device (Thunderbolt, FireWire) to read RAM during boot
 
 **Mitigation:**
+
 - Enable IOMMU/VT-d protection
 - Disable unnecessary boot-time PCI devices
 - Minimize key lifetime in RAM
@@ -440,6 +450,7 @@ Keep both old USS file key and new derived USS key for a transition period:
 **Attack:** Compromise system firmware to capture keys or passwords
 
 **Mitigation:**
+
 - Use open firmware (coreboot/libreboot) if possible
 - Regular firmware updates from trusted sources
 - Firmware integrity verification (TPM)
@@ -454,12 +465,14 @@ Keep both old USS file key and new derived USS key for a transition period:
 ### Common Issue: "Failed to unlock LUKS device" (v1.1.0)
 
 **Symptoms:**
-```
+
+```text
 [   33.237635] tkey-luks: SUCCESS: Key derived successfully
 [   38.684163] tkey-luks: FAILURE: Failed to unlock LUKS device
 ```
 
 **Root Cause (Fixed in v1.1.1):**
+
 - `/etc/machine-id` (used as salt) was not available in initramfs
 - Setup used machine-id → USS₁
 - Boot couldn't find machine-id → different/no salt → USS₂
@@ -469,18 +482,21 @@ Keep both old USS file key and new derived USS key for a transition period:
 
 1. **Update to v1.1.1+** (includes automatic fix)
 2. **Rebuild initramfs:**
+
    ```bash
    sudo update-initramfs -u -k all
    # Look for: "✓ Copied machine-id for USS derivation"
    ```
 
 3. **Verify salt availability:**
+
    ```bash
    cd test
    bash verify-salt-availability.sh
    ```
 
 4. **Re-add LUKS keys:**
+
    ```bash
    # Old keys won't work with new USS
    cd test/luks-setup
@@ -497,7 +513,8 @@ bash verify-salt-availability.sh
 ```
 
 **Expected output:**
-```
+
+```text
 ✓ Found machine-id
 ✓ machine-id found in initramfs!
 ✓ Salt values MATCH!
@@ -527,7 +544,8 @@ bash test-improved-uss.sh
 ```
 
 Should show:
-```
+
+```text
 Using machine-id for salt
 USS derived successfully using PBKDF2 (100000 iterations)
 USS (hex): [consistent 32-byte hex value]
@@ -540,6 +558,7 @@ USS (hex): [consistent 32-byte hex value]
 **Cause:** System has no machine-id
 
 **Solution:**
+
 ```bash
 # Generate machine-id
 sudo systemd-machine-id-setup
@@ -620,6 +639,7 @@ sudo update-initramfs -u -k all
 ### Key Management
 
 1. **Multiple TKeys**
+
    ```bash
    # Add backup TKey to different keyslot
    echo "your-password" | sudo tkey-luks-client \
@@ -630,6 +650,7 @@ sudo update-initramfs -u -k all
    ```
 
 2. **Emergency Password**
+
    ```bash
    # Always maintain password-based keyslot
    sudo cryptsetup luksAddKey /dev/sdaX
@@ -637,6 +658,7 @@ sudo update-initramfs -u -k all
    ```
 
 3. **LUKS Header Backup**
+
    ```bash
    # Backup LUKS header
    cryptsetup luksHeaderBackup /dev/sdaX \
@@ -762,6 +784,7 @@ The CodeChecker workflow runs automatically on:
 - **Pre-release builds** - Verification before deployment
 
 **Security Policy:**
+
 - ❌ **Blocks merge** if new HIGH/MEDIUM security issues are detected
 - ⚠️ **Warns** on any new issues compared to baseline
 - ✅ **Passes** if no new issues or only minor improvements
@@ -771,12 +794,14 @@ The CodeChecker workflow runs automatically on:
 The CodeChecker analysis includes:
 
 **Security-Focused Analyzers:**
+
 - `security.*` - Security-related checkers
 - `cert.*` - CERT C/C++ Secure Coding Standard
 - `bugprone.*` - Common programming errors
 - `concurrency.*` - Thread safety issues
 
 **Memory Safety:**
+
 - Buffer overflow detection
 - Null pointer dereference
 - Use-after-free
@@ -784,6 +809,7 @@ The CodeChecker analysis includes:
 - Double-free issues
 
 **Undefined Behavior:**
+
 - Integer overflow
 - Uninitialized variables
 - Division by zero
@@ -826,6 +852,7 @@ xdg-open ./codechecker_html/index.html
 **Using the workflow configuration:**
 
 The project includes a `.codechecker.json` configuration file that specifies:
+
 - Enabled analyzers (security, cert, bugprone, SEI CERT C, etc.)
 - Checker configurations
 - Analysis timeout and parallelism settings
@@ -870,6 +897,7 @@ The `.github/workflows/codechecker.yml` workflow uses the official **CodeChecker
 6. **Uploads** detailed HTML reports as artifacts
 
 **GitHub Action Benefits:**
+
 - Automatic LLVM/Clang installation
 - Consistent analysis environment
 - Built-in HTML report generation
@@ -894,6 +922,7 @@ potentially_flagged_function();
 ```
 
 **Requirements for suppressions:**
+
 - Must include clear justification
 - Requires security team review
 - Document in code review discussion
@@ -910,6 +939,7 @@ CodeChecker classifies issues by severity:
 - **STYLE** - Coding standard violations
 
 **Build Policy:**
+
 - CRITICAL/HIGH: Always block merge
 - MEDIUM: Block if security-related
 - LOW: Warning only
@@ -925,6 +955,7 @@ CodeChecker classifies issues by severity:
 4. **Yearly**: Full codebase security review
 
 **Metrics tracked:**
+
 - Total issues (by severity)
 - New issues per PR
 - Issue resolution time
