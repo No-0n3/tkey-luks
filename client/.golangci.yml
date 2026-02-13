@@ -1,0 +1,82 @@
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    # Security-focused linters
+    - gosec           # Security issues
+    - govet          # Standard Go static analysis
+    - errcheck       # Unchecked errors
+    - staticcheck    # Advanced static analysis
+    - unused         # Unused code
+    - ineffassign    # Ineffectual assignments
+    - typecheck      # Type checking
+    
+    # Code quality
+    - gofmt          # Code formatting
+    - goimports      # Import formatting
+    - misspell       # Misspellings
+    - revive         # Fast, configurable linter
+    - unconvert      # Unnecessary conversions
+    - unparam        # Unused function parameters
+    - goconst        # Repeated strings that could be constants
+    - gocyclo        # Cyclomatic complexity
+    - dupl           # Code cloning detection
+    
+    # Crypto/security specific
+    - bodyclose      # HTTP response body must be closed
+    - rowserrcheck   # SQL rows.Err must be checked
+    - sqlclosecheck  # SQL resources must be closed
+
+linters-settings:
+  gosec:
+    severity: medium
+    confidence: medium
+    excludes:
+      # Add any exclusions here if needed
+    config:
+      G101: "(?i)token|password|secret" # Check for hardcoded credentials
+      G104: true # Audit errors not checked
+      G401: true # Detect weak crypto (MD5, SHA1, DES)
+      G501: true # Blacklist weak crypto imports
+      G505: true # Check for weak crypto algorithms
+  
+  govet:
+    check-shadowing: true
+    enable-all: true
+    disable:
+      - composites # Can produce false positives
+  
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+    exclude-functions:
+      - (io.Closer).Close # Only if you're confident about defer close
+  
+  gocyclo:
+    min-complexity: 15
+  
+  dupl:
+    threshold: 100
+  
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  
+  # Don't hide new issues in existing code
+  new: false
+  
+  # Security issues should never be excluded
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+        - dupl
+        - gocyclo

@@ -11,7 +11,7 @@ OBJCOPY = llvm-objcopy
 # Flags for TKey target (matching tkey-libs build)
 CFLAGS = -target riscv32-unknown-none-elf
 CFLAGS += -march=rv32iczmmul -mabi=ilp32 -mcmodel=medany
-CFLAGS += -static -std=gnu99 -O2 -ffast-math
+CFLAGS += -static -std=gnu99 -O2 -ffast-math -ffreestanding
 CFLAGS += -fno-common -fno-builtin-printf -fno-builtin-putchar
 CFLAGS += -nostdlib -mno-relax -flto
 CFLAGS += -Wall -Werror=implicit-function-declaration
@@ -46,6 +46,31 @@ INCLUDES = -I$(LIBDIR)/include -I$(LIBDIR)
 
 # Default target
 all: check-toolchain check-libs $(BIN)
+
+# Generate compile_commands.json for clangd/IDE support
+# Generates in workspace root with absolute paths for IDE extensions
+compile_commands.json: check-libs
+	@echo "Generating compile_commands.json in workspace root..."
+	@echo '[' > ../$@
+	@first=true; \
+	for src in $(SRCS); do \
+		if [ "$$first" = true ]; then \
+			first=false; \
+		else \
+			echo ',' >> ../$@; \
+		fi; \
+		obj=$${src%.c}.o; \
+		abs_src="$(shell pwd)/$$src"; \
+		abs_obj="$(shell pwd)/$$obj"; \
+		echo '  {' >> ../$@; \
+		echo "    \"directory\": \"$(shell pwd)\"," >> ../$@; \
+		echo "    \"command\": \"$(CC) $(CFLAGS) $(INCLUDES) -c $$abs_src -o $$abs_obj\"," >> ../$@; \
+		echo "    \"file\": \"$$abs_src\"" >> ../$@; \
+		echo -n '  }' >> ../$@; \
+	done
+	@echo '' >> ../$@
+	@echo ']' >> ../$@
+	@echo "Generated ../$@ with absolute paths"
 
 # Check if LLVM/Clang toolchain is available
 check-toolchain:
@@ -139,4 +164,4 @@ config:
 	@echo "  TARGET: $(TARGET)"
 	@echo "  Output: $(BIN)"
 
-.PHONY: all check-toolchain check-libs build-libs clean clean-all install config
+.PHONY: all check-toolchain check-libs build-libs clean clean-all install config compile_commands.json
