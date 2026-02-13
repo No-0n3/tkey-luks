@@ -15,10 +15,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/tillitis/tkeyclient"
 	"golang.org/x/crypto/pbkdf2"
+	"golang.org/x/term"
 )
 
 // TKey-LUKS protocol command codes
@@ -101,7 +103,7 @@ func (RspGetNameVer) String() string                { return "rspGetNameVer" }
 
 var (
 	le = log.New(os.Stderr, "", 0)
-	
+
 	// Command instances
 	cmdSetChallenge  = CmdSetChallenge{}
 	rspSetChallenge  = RspSetChallenge{}
@@ -167,7 +169,7 @@ func (t *TKeyLUKS) LoadApp(appBinary []byte, uss []byte) error {
 
 // GetAppNameVersion gets the app name and version
 func (t *TKeyLUKS) GetAppNameVersion() error {
-	id := 2  // Use frame ID 2 like tkeysign does
+	id := 2 // Use frame ID 2 like tkeysign does
 	tx, err := tkeyclient.NewFrameBuf(cmdGetNameVer, id)
 	if err != nil {
 		return fmt.Errorf("NewFrameBuf: %w", err)
@@ -352,7 +354,7 @@ func (t *TKeyLUKS) DeriveKey() ([]byte, error) {
 // UnlockLUKS uses cryptsetup to unlock a LUKS volume with the derived key
 func UnlockLUKS(keyfile string, luksImage string, mapperName string) error {
 	cmd := exec.Command("sudo", "cryptsetup", "luksOpen", luksImage, mapperName, "--key-file", keyfile)
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("cryptsetup failed: %w\nOutput: %s", err, string(output))
@@ -372,6 +374,7 @@ Derive a key from TKey and optionally unlock a LUKS volume.
 Flags:
   --challenge STRING       Challenge string for key derivation
   --challenge-from-stdin   Read challenge from stdin (for piping)
+  --challenge-prompt       Prompt for challenge (secure, no echo)
   --luks-image PATH        Path to LUKS image to unlock
   --mapper-name NAME       Device mapper name (default: tkey-luks)
   --app PATH               Path to device app binary
@@ -383,7 +386,7 @@ Flags:
 USS Options (User Supplied Secret):
   --derive-uss             Derive USS from password using PBKDF2 (RECOMMENDED)
   --uss-password TEXT      Password for USS derivation (defaults to challenge)
-  --uss-password-stdin     Read USS password from stdin
+  --uss-password-stdin     Read USS password from stdin (advanced usage)
   --salt TEXT              Custom salt for USS derivation (auto-detected if not provided)
   --pbkdf2-iterations N    PBKDF2 iterations (default: 100000)
   --uss PATH               [DEPRECATED] Load USS from file (insecure)
@@ -397,22 +400,25 @@ Other Options:
   --help                   Show this help
 
 Examples:
-  # Unlock LUKS volume with challenge
-  %s --challenge "my-system-id" --luks-image /dev/sda2
+  # Add TKey-derived key to LUKS partition (RECOMMENDED - two-step process)
+  # Step 1: Generate the key
+  %s --challenge-prompt --derive-uss --output /tmp/tkey.bin
+  # Step 2: Add it to LUKS (you'll be prompted for existing password)
+  sudo cryptsetup luksAddKey /dev/sda2 /tmp/tkey.bin --key-slot 1
+  sudo shred -u /tmp/tkey.bin
 
-  # Unlock test image
-  %s --challenge "luks-challenge-2024" --luks-image test-luks-100mb.img
+  # Unlock LUKS volume with TKey
+  %s --challenge-prompt --derive-uss --luks-image /dev/sda2
 
-  # Derive key from stdin and output to stdout (for piping to cryptsetup)
-  echo "my challenge" | %s --challenge-from-stdin --output -
+  # Use with cryptsetup luksOpen (pipe the key)
+  echo "my challenge" | %s --challenge-from-stdin --derive-uss --output - | \
+    sudo cryptsetup luksOpen /dev/sda2 root_crypt --key-file=-
 
-  # Use with cryptsetup directly
-  echo "my challenge" | %s --challenge-from-stdin --output - | \
-    cryptsetup luksOpen /dev/sda2 root_crypt
-
-  # Save key for later use
-  %s --challenge "test" --output keyfile.bin
-`, os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0])
+  # Verify TKey-derived key (test without adding to LUKS)
+  %s --challenge-prompt --derive-uss --output /tmp/test-key.bin
+  sudo cryptsetup luksOpen /dev/sda2 test --key-file=/tmp/test-key.bin
+  sudo cryptsetup luksClose test && sudo shred -u /tmp/test-key.bin
+`, os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0])
 }
 
 // findDeviceBinary searches for the device binary in multiple locations
@@ -465,7 +471,7 @@ func getSystemSalt() ([]byte, error) {
 			return []byte(salt), nil
 		}
 	}
-	
+
 	// Try /var/lib/dbus/machine-id (alternative location)
 	if data, err := os.ReadFile("/var/lib/dbus/machine-id"); err == nil {
 		salt := strings.TrimSpace(string(data))
@@ -474,7 +480,7 @@ func getSystemSalt() ([]byte, error) {
 			return []byte(salt), nil
 		}
 	}
-	
+
 	// Try DMI product UUID (hardware-based)
 	if data, err := os.ReadFile("/sys/class/dmi/id/product_uuid"); err == nil {
 		salt := strings.TrimSpace(string(data))
@@ -483,14 +489,14 @@ func getSystemSalt() ([]byte, error) {
 			return []byte(salt), nil
 		}
 	}
-	
+
 	// Fallback: use hostname
 	hostname, err := os.Hostname()
 	if err == nil && hostname != "" && hostname != "localhost" {
 		le.Printf("WARNING: Using hostname as salt (not ideal for security)")
 		return []byte(hostname), nil
 	}
-	
+
 	return nil, fmt.Errorf("could not determine system salt")
 }
 
@@ -505,36 +511,53 @@ func deriveUSSFromPassword(password string, salt []byte, iterations int) ([]byte
 	if iterations < 10000 {
 		return nil, fmt.Errorf("iterations too low (minimum 10000)")
 	}
-	
+
 	// Use PBKDF2 with SHA-256 to derive USS
 	uss := pbkdf2.Key([]byte(password), salt, iterations, ussLength, sha256.New)
-	
+
 	if len(uss) != ussLength {
 		return nil, fmt.Errorf("derived USS wrong length: %d", len(uss))
 	}
-	
+
 	return uss, nil
+}
+
+// readSecurePassword reads a password from the terminal without echoing
+func readSecurePassword(prompt string) ([]byte, error) {
+	// Write prompt to stderr (not captured by pipes)
+	fmt.Fprint(os.Stderr, prompt)
+
+	// Read password without echo
+	password, err := term.ReadPassword(int(syscall.Stdin))
+	fmt.Fprintln(os.Stderr) // Print newline after password input
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to read password: %w", err)
+	}
+
+	return password, nil
 }
 
 func main() {
 	var (
-		challengeStr       string
-		challengeStdin     bool
-		luksImage          string
-		mapperName         = "tkey-luks"
-		appPath            = findDeviceBinary()
-		skipLoadApp        bool
-		portPath           string
-		speed              = tkeyclient.SerialSpeed
-		ussPath            string // Deprecated: for backward compatibility
-		deriveUSS          bool
-		ussPassword        string
-		ussPasswordStdin   bool
-		saltValue          string
-		pbkdf2Iterations   = defaultPBKDF2Iterations
-		saveKeyPath        string
-		outputPath         string
-		verbose            bool
+		challengeStr     string
+		challengeStdin   bool
+		challengePrompt  bool
+		luksImage        string
+		mapperName       = "tkey-luks"
+		appPath          = findDeviceBinary()
+		skipLoadApp      bool
+		portPath         string
+		speed            = tkeyclient.SerialSpeed
+		ussPath          string // Deprecated: for backward compatibility
+		deriveUSS        bool
+		ussPassword      string
+		ussPasswordStdin bool
+		saltValue        string
+		pbkdf2Iterations = defaultPBKDF2Iterations
+		saveKeyPath      string
+		outputPath       string
+		verbose          bool
 	)
 
 	// Simple flag parsing
@@ -549,6 +572,8 @@ func main() {
 			i++
 		case "--challenge-from-stdin":
 			challengeStdin = true
+		case "--challenge-prompt":
+			challengePrompt = true
 		case "--luks-image":
 			if i+1 >= len(args) {
 				le.Fatal("--luks-image requires an argument")
@@ -661,8 +686,20 @@ func main() {
 		}
 	}
 
+	// Prompt for challenge if requested
+	if challengePrompt {
+		password, err := readSecurePassword("Enter challenge: ")
+		if err != nil {
+			le.Fatalf("Failed to read challenge: %v", err)
+		}
+		challengeStr = string(password)
+		if challengeStr == "" {
+			le.Fatal("Empty challenge provided")
+		}
+	}
+
 	if challengeStr == "" {
-		le.Fatal("--challenge or --challenge-from-stdin is required\n\nUse --help for usage")
+		le.Fatal("--challenge, --challenge-from-stdin, or --challenge-prompt is required\n\nUse --help for usage")
 	}
 
 	// At least one output method must be specified
@@ -690,12 +727,12 @@ func main() {
 
 	// Handle USS: either derive from password or load from file
 	var uss []byte
-	
+
 	if deriveUSS {
 		// Improved mode: derive USS from password
 		le.Printf("Using improved USS derivation from password")
-		
-		// Get USS password (can be same as challenge or different)
+
+		// Get USS password - defaults to challenge for security consistency
 		if ussPasswordStdin {
 			if verbose {
 				le.Printf("Reading USS password from stdin...")
@@ -707,14 +744,17 @@ func main() {
 			ussPassword = string(bytes.TrimSpace(stdinData))
 		} else if ussPassword == "" {
 			// Default: use challenge password for USS derivation
+			// This maintains the security property: USS = PBKDF2(challenge, salt)
 			ussPassword = challengeStr
-			le.Printf("Using challenge password for USS derivation (recommended)")
+			if verbose {
+				le.Printf("Using challenge password for USS derivation")
+			}
 		}
-		
+
 		if ussPassword == "" {
 			le.Fatal("USS password cannot be empty")
 		}
-		
+
 		// Get or detect salt
 		var salt []byte
 		if saltValue != "" {
@@ -726,13 +766,13 @@ func main() {
 				le.Fatalf("Failed to get system salt: %v\n\nYou can provide a custom salt with --salt", err)
 			}
 		}
-		
+
 		// Derive USS
 		uss, err = deriveUSSFromPassword(ussPassword, salt, pbkdf2Iterations)
 		if err != nil {
 			le.Fatalf("Failed to derive USS: %v", err)
 		}
-		
+
 		if verbose {
 			le.Printf("USS derived successfully using PBKDF2 (%d iterations)", pbkdf2Iterations)
 			le.Printf("USS (hex): %s", hex.EncodeToString(uss))
@@ -782,7 +822,6 @@ func main() {
 	if err := tkey.GetAppNameVersion(); err != nil {
 		le.Fatalf("Failed to verify app: %v", err)
 	}
-
 
 	// Convert challenge string to bytes
 	challenge := []byte(challengeStr)
