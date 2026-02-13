@@ -350,6 +350,13 @@ static enum state deriving_commands(enum state state, struct context *ctx,
 
 		state = STATE_STARTED;
 		break;
+	default:
+		qemu_puts("Got unknown deriving command: 0x");
+		qemu_puthex(pkt.cmd[0]);
+		qemu_lf();
+
+		state = STATE_FAILED;
+		break;
 	}
 
 	return state;

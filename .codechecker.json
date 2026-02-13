@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Ericsson/codechecker/master/config/config_schema.json",
+  "analyzer": [
+    "--enable=security",
+    "--enable=sensitive",
+    "--enable=core",
+    "--enable=deadcode",
+    "--enable=unix",
+    "--enable=cert",
+    "--enable=bugprone",
+    "--enable=concurrency",
+    "--enable=guideline:sei-cert-c",
+    "--disable=readability",
+    "--disable=performance",
+    "--disable=cppcoreguidelines",
+    "--saargs=clangsa:--analyzer-config aggressive-binary-operation-simplification=true",
+    "--tidyargs=--config={Checks: 'cert-*,bugprone-*,clang-analyzer-security*,concurrency-*,-cert-err58-cpp,-cert-dcl21-cpp'}",
+    "--timeout=60"
+  ],
+  "analyze": [
+    "--jobs=4",
+    "--clean"
+  ],
+  "store": []
+}

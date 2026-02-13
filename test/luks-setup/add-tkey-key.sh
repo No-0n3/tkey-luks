@@ -41,12 +41,17 @@ echo "Deriving key from TKey with improved USS..."
 echo "(You'll need to touch the TKey when it blinks)"
 echo ""
 
-# Derive key using improved USS derivation and add to LUKS
+# Derive key using improved USS derivation and save to temp file
 echo "$PASSWORD" | tkey-luks-client \
     --challenge-from-stdin \
     --derive-uss \
-    --output - | \
-sudo cryptsetup luksAddKey "$IMAGE_FILE" -
+    --output /tmp/tkey-test-key.bin
+
+# Add the key to LUKS (using existing password to authenticate)
+echo "$PASSWORD" | sudo cryptsetup luksAddKey "$IMAGE_FILE" /tmp/tkey-test-key.bin
+
+# Clean up temp key
+sudo shred -u /tmp/tkey-test-key.bin
 
 echo ""
 echo "✓ TKey key added successfully using improved USS derivation!"

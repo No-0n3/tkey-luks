@@ -159,14 +159,18 @@ See [USS-DERIVATION.md](USS-DERIVATION.md) for full security analysis.
 ### Enroll TKey with LUKS Partition (Improved Method)
 
 ```bash
-# Recommended: Use --derive-uss for improved security
-echo "your-password" | sudo tkey-luks-client \
-  --challenge-from-stdin \
+# Recommended: Two-step process for clarity and safety
+# Step 1: Generate TKey-derived key
+sudo tkey-luks-client \
+  --challenge-prompt \
   --derive-uss \
-  --output - | \
-sudo cryptsetup luksAddKey /dev/sdaX -
+  --output /tmp/tkey-key.bin
 
-# You'll be prompted for an existing LUKS password first
+# Step 2: Add key to LUKS (you'll be prompted for existing password)
+sudo cryptsetup luksAddKey /dev/sdaX /tmp/tkey-key.bin --key-slot 1
+
+# Step 3: Clean up the temporary key file
+sudo shred -u /tmp/tkey-key.bin
 ```
 
 **What this does:**
@@ -174,34 +178,39 @@ sudo cryptsetup luksAddKey /dev/sdaX -
 1. Derives USS from your password using PBKDF2 (100k iterations)
 2. Loads device app to TKey with derived USS
 3. TKey derives key using USS + password (double protection)
-4. Adds the derived key to LUKS keyslot
+4. Saves the 64-byte key to a temporary file
+5. Adds the key to LUKS (authenticating with your existing password)
+6. Securely deletes the temporary file
 
 ### Advanced Enrollment Options
 
 ```bash
 # Use custom salt (optional - system salt is recommended)
-echo "your-password" | sudo tkey-luks-client \
-  --challenge-from-stdin \
+sudo tkey-luks-client \
+  --challenge-prompt \
   --derive-uss \
   --salt custom-salt-value \
-  --output - | \
-sudo cryptsetup luksAddKey /dev/sdaX -
+  --output /tmp/tkey-key.bin
+sudo cryptsetup luksAddKey /dev/sdaX /tmp/tkey-key.bin
+sudo shred -u /tmp/tkey-key.bin
 
 # Increase PBKDF2 iterations for stronger security (slower boot)
-echo "your-password" | sudo tkey-luks-client \
-  --challenge-from-stdin \
+sudo tkey-luks-client \
+  --challenge-prompt \
   --derive-uss \
   --pbkdf2-iterations 200000 \
-  --output - | \
-sudo cryptsetup luksAddKey /dev/sdaX -
+  --output /tmp/tkey-key.bin
+sudo cryptsetup luksAddKey /dev/sdaX /tmp/tkey-key.bin
+sudo shred -u /tmp/tkey-key.bin
 
 # Use different password for USS vs challenge (not recommended)
 sudo tkey-luks-client \
   --uss-password "uss-secret" \
   --challenge "challenge-secret" \
   --derive-uss \
-  --output - | \
-sudo cryptsetup luksAddKey /dev/sdaX -
+  --output /tmp/tkey-key.bin
+sudo cryptsetup luksAddKey /dev/sdaX /tmp/tkey-key.bin
+sudo shred -u /tmp/tkey-key.bin
 ```
 
 ### Enroll Multiple TKeys
@@ -209,19 +218,15 @@ sudo cryptsetup luksAddKey /dev/sdaX -
 ```bash
 # Primary TKey (keyslot 0)
 # Use same password for both TKeys
-echo "your-password" | sudo tkey-luks-client \
-  --challenge-from-stdin \
-  --derive-uss \
-  --output - | \
-sudo cryptsetup luksAddKey /dev/sdaX - --key-slot 0
+sudo tkey-luks-client --challenge-prompt --derive-uss --output /tmp/tkey1.bin
+sudo cryptsetup luksAddKey /dev/sdaX /tmp/tkey1.bin --key-slot 0
+sudo shred -u /tmp/tkey1.bin
 
 # Backup TKey (keyslot 1)
-# Connect different TKey with same password
-echo "your-password" | sudo tkey-luks-client \
-  --challenge-from-stdin \
-  --derive-uss \
-  --output - | \
-sudo cryptsetup luksAddKey /dev/sdaX - --key-slot 1
+# Connect different TKey device, use same password
+sudo tkey-luks-client --challenge-prompt --derive-uss --output /tmp/tkey2.bin
+sudo cryptsetup luksAddKey /dev/sdaX /tmp/tkey2.bin --key-slot 1
+sudo shred -u /tmp/tkey2.bin
 ```
 
 ### Maintain Emergency Password

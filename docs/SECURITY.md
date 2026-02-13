@@ -13,6 +13,7 @@
 7. [Troubleshooting](#troubleshooting)
 8. [Best Practices](#best-practices)
 9. [Compliance & Audit](#compliance--audit)
+10. [Static Analysis & Code Security](#static-analysis--code-security)
 
 ---
 
@@ -159,12 +160,14 @@ Stage 5: Volume Unlock
 The password is used in **two independent cryptographic operations**:
 
 - **USS Derivation** (affects TKey CDI):
+
   ```text
   USS = PBKDF2(password, system_salt, 100k iterations)
   CDI = Hash(UDS ⊕ Device_App ⊕ USS)
   ```
 
 - **Challenge Data** (affects BLAKE2b):
+
   ```text
   secret_key = Ed25519_derive(CDI)  // Contains USS
   LUKS_key = BLAKE2b(key=secret_key, data=password)
@@ -245,11 +248,11 @@ tkey-luks-client \
 **Performance Guide:**
 
 | Iterations | Security | Boot Delay |
-|-----------|----------|------------|
-| 100,000   | Good     | ~100ms     |
-| 200,000   | Better   | ~200ms     |
-| 500,000   | Best     | ~500ms     |
-| 1,000,000 | Overkill | ~1s        |
+|------------|----------|------------|
+| 100,000    | Good     | ~100ms     |
+| 200,000    | Better   | ~200ms     |
+| 500,000    | Best     | ~500ms     |
+| 1,000,000  | Overkill | ~1s        |
 
 ### Backward Compatibility (Deprecated)
 
@@ -270,6 +273,7 @@ tkey-luks-client \
 ### For New Installations
 
 1. **Build and Install** with new code:
+
    ```bash
    ./scripts/build-all.sh
    sudo make -C client install
@@ -278,6 +282,7 @@ tkey-luks-client \
    ```
 
 2. **Add LUKS Key** using derived USS:
+
    ```bash
    echo "your-password" | sudo tkey-luks-client \
      --challenge-from-stdin \
@@ -288,6 +293,7 @@ tkey-luks-client \
    ```
 
 3. **Update initramfs**:
+
    ```bash
    sudo update-initramfs -u -k all
    # Look for: "✓ Copied machine-id for USS derivation"
@@ -300,23 +306,24 @@ tkey-luks-client \
 #### Option 1: Fresh Setup (Recommended)
 
 ```bash
-# 1. Add new key with derived USS
-echo "your-password" | sudo tkey-luks-client \
-  --challenge-from-stdin \
+# 1. Generate new key with derived USS
+sudo tkey-luks-client \
+  --challenge-prompt \
   --derive-uss \
-  --output - | \
-sudo cryptsetup luksAddKey /dev/nvme0n1p6 -
+  --output /tmp/tkey-key.bin
 
-# 2. Test new key works
-echo "your-password" | sudo tkey-luks-client \
-  --challenge-from-stdin \
-  --derive-uss \
-  --output /tmp/test-key.bin
+# 2. Add to LUKS (enter existing password when prompted)
+sudo cryptsetup luksAddKey /dev/nvme0n1p6 /tmp/tkey-key.bin
 
+# 3. Test new key works
 sudo cryptsetup luksOpen /dev/nvme0n1p6 test-mapper \
-  --key-file=/tmp/test-key.bin
+  --key-file=/tmp/tkey-key.bin
+sudo cryptsetup luksClose test-mapper
 
-# 3. If successful, update initramfs and reboot to test
+# 4. Clean up temporary file
+sudo shred -u /tmp/tkey-key.bin
+
+# 5. If successful, update initramfs and reboot to test
 sudo update-initramfs -u
 sudo reboot
 
@@ -346,10 +353,10 @@ Keep both old USS file key and new derived USS key for a transition period:
 
 **Defense:**
 
-| Approach | USS Stored? | Extractable? | Result |
-|----------|-------------|--------------|--------|
-| v1.0.x (OLD) | Yes (`/boot/initramfs`) | ✗ Yes | 3-factor → 1-factor |
-| v1.1.0+ (NEW) | No (derived) | ✓ No | Remains 3-factor |
+| Approach      | USS Stored?             | Extractable? | Result               |
+|---------------|-------------------------|--------------|----------------------|
+| v1.0.x (OLD)  | Yes (`/boot/initramfs`) | ✗ Yes        | 3-factor → 1-factor  |
+| v1.1.0+ (NEW) | No (derived)            | ✓ No         | Remains 3-factor     |
 
 **Mitigation (v1.1.0+):** USS is ephemeral, derived at boot time  
 **Residual Risk:** If TKey also stolen AND attacker guesses password
@@ -359,6 +366,7 @@ Keep both old USS file key and new derived USS key for a transition period:
 **Attack:** Attacker modifies bootloader while device unattended
 
 **Mitigation:**
+
 - Enable Secure Boot (prevents unsigned bootloader)
 - TPM-based boot integrity measurements
 - Physical security (tamper-evident seals)
@@ -372,10 +380,10 @@ Keep both old USS file key and new derived USS key for a transition period:
 
 **Defense:**
 
-| Approach | USS Location | Root Access Impact |
-|----------|--------------|-------------------|
-| v1.0.x (OLD) | `/boot/initramfs-uss/` | ✗ Can extract USS |
-| v1.1.0+ (NEW) | Not stored | ✓ Nothing to extract |
+| Approach      | USS Location           | Root Access Impact    |
+|---------------|------------------------|-----------------------|
+| v1.0.x (OLD)  | `/boot/initramfs-uss/` | ✗ Can extract USS     |
+| v1.1.0+ (NEW) | Not stored             | ✓ Nothing to extract  |
 
 **Mitigation (v1.1.0+):** USS derived from password at boot time  
 **Residual Risk:** Root access can install keylogger (need secure boot + tamper detection)
@@ -385,6 +393,7 @@ Keep both old USS file key and new derived USS key for a transition period:
 **Attack:** Attacker attempts to clone TKey by extracting UDS
 
 **Mitigation:**
+
 - TKey secrets are hardware-protected (cannot extract UDS)
 - Even with USS + password, need physical TKey hardware
 - Touch requirement prevents automation
@@ -397,12 +406,13 @@ Keep both old USS file key and new derived USS key for a transition period:
 
 **Defense:**
 
-| Approach | Vulnerable Assets | Impact |
-|----------|------------------|---------|
-| v1.0.x (OLD) | USS file in plaintext | ✗ Firmware reads USS → bypass |
-| v1.1.0+ (NEW) | USS derived in memory | ✓ No file to backdoor |
+| Approach      | Vulnerable Assets      | Impact                        |
+|---------------|------------------------|-------------------------------|
+| v1.0.x (OLD)  | USS file in plaintext  | ✗ Firmware reads USS → bypass |
+| v1.1.0+ (NEW) | USS derived in memory  | ✓ No file to backdoor         |
 
 **Mitigation (v1.1.1+):**
+
 - USS never touches filesystem
 - Firmware signing and attestation
 - Secure boot chain verification
@@ -414,6 +424,7 @@ Keep both old USS file key and new derived USS key for a transition period:
 **Attack:** Intercept USB communication between client and TKey
 
 **Mitigation:**
+
 - Challenge-response protocol prevents replay
 - LUKS key derived on TKey, never transmitted over USB
 - USS derived before TKey communication (not sent)
@@ -426,6 +437,7 @@ Keep both old USS file key and new derived USS key for a transition period:
 **Attack:** Use DMA-capable device (Thunderbolt, FireWire) to read RAM during boot
 
 **Mitigation:**
+
 - Enable IOMMU/VT-d protection
 - Disable unnecessary boot-time PCI devices
 - Minimize key lifetime in RAM
@@ -438,6 +450,7 @@ Keep both old USS file key and new derived USS key for a transition period:
 **Attack:** Compromise system firmware to capture keys or passwords
 
 **Mitigation:**
+
 - Use open firmware (coreboot/libreboot) if possible
 - Regular firmware updates from trusted sources
 - Firmware integrity verification (TPM)
@@ -452,12 +465,14 @@ Keep both old USS file key and new derived USS key for a transition period:
 ### Common Issue: "Failed to unlock LUKS device" (v1.1.0)
 
 **Symptoms:**
-```
+
+```text
 [   33.237635] tkey-luks: SUCCESS: Key derived successfully
 [   38.684163] tkey-luks: FAILURE: Failed to unlock LUKS device
 ```
 
 **Root Cause (Fixed in v1.1.1):**
+
 - `/etc/machine-id` (used as salt) was not available in initramfs
 - Setup used machine-id → USS₁
 - Boot couldn't find machine-id → different/no salt → USS₂
@@ -467,18 +482,21 @@ Keep both old USS file key and new derived USS key for a transition period:
 
 1. **Update to v1.1.1+** (includes automatic fix)
 2. **Rebuild initramfs:**
+
    ```bash
    sudo update-initramfs -u -k all
    # Look for: "✓ Copied machine-id for USS derivation"
    ```
 
 3. **Verify salt availability:**
+
    ```bash
    cd test
    bash verify-salt-availability.sh
    ```
 
 4. **Re-add LUKS keys:**
+
    ```bash
    # Old keys won't work with new USS
    cd test/luks-setup
@@ -495,7 +513,8 @@ bash verify-salt-availability.sh
 ```
 
 **Expected output:**
-```
+
+```text
 ✓ Found machine-id
 ✓ machine-id found in initramfs!
 ✓ Salt values MATCH!
@@ -525,7 +544,8 @@ bash test-improved-uss.sh
 ```
 
 Should show:
-```
+
+```text
 Using machine-id for salt
 USS derived successfully using PBKDF2 (100000 iterations)
 USS (hex): [consistent 32-byte hex value]
@@ -538,6 +558,7 @@ USS (hex): [consistent 32-byte hex value]
 **Cause:** System has no machine-id
 
 **Solution:**
+
 ```bash
 # Generate machine-id
 sudo systemd-machine-id-setup
@@ -618,6 +639,7 @@ sudo update-initramfs -u -k all
 ### Key Management
 
 1. **Multiple TKeys**
+
    ```bash
    # Add backup TKey to different keyslot
    echo "your-password" | sudo tkey-luks-client \
@@ -628,6 +650,7 @@ sudo update-initramfs -u -k all
    ```
 
 2. **Emergency Password**
+
    ```bash
    # Always maintain password-based keyslot
    sudo cryptsetup luksAddKey /dev/sdaX
@@ -635,6 +658,7 @@ sudo update-initramfs -u -k all
    ```
 
 3. **LUKS Header Backup**
+
    ```bash
    # Backup LUKS header
    cryptsetup luksHeaderBackup /dev/sdaX \
@@ -732,6 +756,367 @@ sudo update-initramfs -u -k all
    - [ ] Review security posture quarterly
    - [ ] Update firmware as available
    - [ ] Rotate keys per schedule
+
+---
+
+## Static Analysis & Code Security
+
+TKey-LUKS uses comprehensive static analysis to detect security vulnerabilities, bugs, and code quality issues before they reach production. This provides an additional layer of security beyond manual code review.
+
+### CodeChecker Integration (C/C++ Device Code)
+
+[CodeChecker](https://codechecker.readthedocs.io/) is a static analysis infrastructure that:
+
+- Runs multiple analyzers (Clang-Tidy, Clang Static Analyzer, Cppcheck)
+- Detects security vulnerabilities (CWE, CERT guidelines)
+- Identifies memory safety issues (buffer overflows, null pointers)
+- Finds undefined behavior and logic errors
+- Tracks issues over time with baseline comparison
+
+#### Automated Security Gate
+
+The CodeChecker workflow runs automatically on:
+
+- **Pull Requests** - Prevents merging code with new security issues
+- **Pushes to main branches** - Continuous monitoring of code quality
+- **Pre-release builds** - Verification before deployment
+
+**Security Policy:**
+
+- ❌ **Blocks merge** if new HIGH/MEDIUM security issues are detected
+- ⚠️ **Warns** on any new issues compared to baseline
+- ✅ **Passes** if no new issues or only minor improvements
+
+#### Enabled Security Checks
+
+The CodeChecker analysis includes:
+
+**Security-Focused Analyzers:**
+
+- `security.*` - Security-related checkers
+- `cert.*` - CERT C/C++ Secure Coding Standard
+- `bugprone.*` - Common programming errors
+- `concurrency.*` - Thread safety issues
+
+**Memory Safety:**
+
+- Buffer overflow detection
+- Null pointer dereference
+- Use-after-free
+- Memory leaks
+- Double-free issues
+
+**Undefined Behavior:**
+
+- Integer overflow
+- Uninitialized variables
+- Division by zero
+- Signed integer overflow
+
+#### Local Development
+
+**Run CodeChecker locally before pushing:**
+
+```bash
+# Install CodeChecker (one-time setup)
+python3 -m venv ~/codechecker_env
+source ~/codechecker_env/bin/activate
+pip install codechecker
+
+# Build and analyze (from project root)
+cd device-app
+make clean && make
+cd ..
+
+# Run analysis using project configuration (.codechecker.json)
+CodeChecker analyze \
+  --output ./codechecker_reports \
+  --config .codechecker.json \
+  compile_commands.json
+
+# View results
+CodeChecker parse ./codechecker_reports
+
+# Export HTML report
+CodeChecker parse \
+  --export html \
+  --output ./codechecker_html \
+  ./codechecker_reports
+
+# Open HTML report in browser
+xdg-open ./codechecker_html/index.html
+```
+
+**Using the workflow configuration:**
+
+The project includes a `.codechecker.json` configuration file that specifies:
+
+- Enabled analyzers (security, cert, bugprone, SEI CERT C, etc.)
+- Checker configurations
+- Analysis timeout and parallelism settings
+
+This ensures **consistency between local analysis and CI/CD** - both use the same configuration file automatically. The `--config .codechecker.json` flag tells CodeChecker to use the project's settings.
+
+#### Baseline Management
+
+The project maintains a **baseline file** (`reports.baseline`) containing known issues that have been reviewed and accepted. This allows the team to:
+
+1. Focus on **new issues** introduced by code changes
+2. Track security improvements over time
+3. Prevent regression of fixed issues
+4. Document accepted risks
+
+**Note:** The current workflow uses the GitHub Action which generates fresh analysis on each run. For baseline comparison, you can run locally:
+
+```bash
+# Generate current baseline
+CodeChecker parse \
+  --export baseline \
+  --output reports.baseline \
+  ./codechecker_reports
+
+# Compare future runs against baseline
+CodeChecker parse \
+  --baseline reports.baseline \
+  ./new_codechecker_reports
+```
+
+**Updating the baseline** (maintainers only) - After reviewing and accepting findings, commit the updated baseline file to the repository.
+
+#### CI/CD Workflow
+
+The `.github/workflows/codechecker.yml` workflow uses the official **CodeChecker GitHub Action** ([whisperity/codechecker-analysis-action](https://github.com/whisperity/CodeChecker-Action)):
+
+1. **Builds** the project to generate `compile_commands.json`
+2. **Analyzes** code using CodeChecker with `.codechecker.json` configuration
+3. **Converts** results to SARIF format
+4. **Uploads** SARIF to GitHub Security tab (Code scanning alerts)
+5. **Filters** for HIGH/MEDIUM security issues
+6. **Fails** if security issues are found
+7. **Reports** findings in PR comments and job summaries
+8. **Uploads** detailed HTML reports as artifacts
+
+**GitHub Action Benefits:**
+
+- Automatic LLVM/Clang installation
+- Consistent analysis environment
+- Built-in HTML report generation
+- Easy configuration via `.codechecker.json`
+- Maintained by the CodeChecker community
+
+**Viewing Results:**
+
+- **Security Tab**: Check the **Security** → **Code scanning alerts** tab on GitHub for SARIF reports
+- **Actions Tab**: Check the **Actions** tab for workflow runs
+- **Artifacts**: Download **codechecker-reports** artifacts
+- **HTML Reports**: Open `codechecker_html_report/index.html` in browser
+- **JSON Reports**: Review for programmatic analysis
+
+### golangci-lint Integration (Go Client Code)
+
+[golangci-lint](https://golangci-lint.run/) is a comprehensive Go linters aggregator that provides fast, parallel analysis with extensive security checks.
+
+#### What is golangci-lint?
+
+golangci-lint runs multiple linters simultaneously and provides:
+
+- **Security Analysis**: gosec for security vulnerabilities
+- **Static Analysis**: govet, staticcheck for code correctness
+- **Error Handling**: errcheck for unchecked errors
+- **Code Quality**: revive, gocyclo for maintainability
+- **Crypto Security**: Detection of weak cryptographic algorithms
+- **Resource Management**: Checks for unclosed resources
+
+#### Enabled Security Linters
+
+The `.golangci.yml` configuration in the `client/` folder enables:
+
+**Security-Focused:**
+
+- `gosec` - Security issues (G101-G505 rules)
+  - Hardcoded credentials detection
+  - Weak crypto algorithms (MD5, SHA1, DES)
+  - SQL injection vulnerabilities
+  - Command injection risks
+  - Integer overflow conditions
+- `govet` - Go standard static analysis
+- `errcheck` - Unchecked error returns
+- `staticcheck` - Advanced static analysis
+
+**Code Quality:**
+
+- `gofmt`, `goimports` - Code formatting
+- `revive` - Fast, configurable linter
+- `gocyclo` - Cyclomatic complexity (threshold: 15)
+- `dupl` - Code duplication detection
+- `bodyclose` - HTTP response body must be closed
+- `rowserrcheck` - SQL rows.Err must be checked
+
+#### Local Development (Go)
+
+**Run golangci-lint locally before pushing:**
+
+```bash
+cd client
+
+# Run with project configuration
+golangci-lint run --config=.golangci.yml
+
+# Run specific linters
+golangci-lint run --enable gosec,govet,errcheck
+
+# Fix auto-fixable issues
+golangci-lint run --fix
+```
+
+#### CI/CD Workflow (Go)
+
+The SAST workflow includes a dedicated `golangci-lint` job that:
+
+1. **Checks out** code and sets up Go environment
+2. **Runs** golangci-lint with `.golangci.yml` configuration
+3. **Generates** JSON and SARIF format reports
+4. **Uploads** SARIF to GitHub Security tab (Code scanning alerts)
+5. **Parses** results to identify security issues (gosec)
+6. **Fails** if security vulnerabilities are found
+7. **Comments** on PRs with findings summary
+8. **Uploads** JSON/SARIF reports as artifacts
+
+**Security Policy:**
+
+- ❌ **Blocks merge** if gosec finds security vulnerabilities
+- ⚠️ **Warns** on code quality issues (non-blocking)
+- ✅ **Passes** if no issues found
+
+**GitHub Action Used:** [golangci/golangci-lint-action@v6](https://github.com/golangci/golangci-lint-action)
+
+#### Common Security Issues Detected
+
+**gosec Rules (G-series):**
+
+- **G101**: Hardcoded credentials
+
+  ```go
+  password := "secret123"  // FAIL
+  ```
+
+- **G104**: Unaudited errors
+
+  ```go
+  file.Close()  // FAIL - should check error
+  defer file.Close()  // OK with defer if confident
+  ```
+
+- **G401**: Weak crypto (MD5, SHA-1)
+
+  ```go
+  import "crypto/md5"  // FAIL - use SHA256+
+  ```
+
+- **G501**: Blacklisted imports (weak crypto)
+- **G505**: Weak key generation algorithms
+
+#### Viewing Results
+
+- **Security Tab**: Check **Security** → **Code scanning alerts** for SARIF reports
+- **GitHub Actions**: Check the workflow run status
+- **Artifacts**: Download `golangci-lint-reports` artifact
+- **JSON Report**: `golangci-report.json` contains detailed findings
+- **SARIF Report**: `golangci-report.sarif` uploaded to Security tab
+- **PR Comments**: Automatic summary posted on pull requests
+
+#### Suppressing False Positives
+
+**For CodeChecker (C/C++):**
+
+```c
+// In source code, use annotations
+// codechecker_suppress [checker.name] Justification for suppression
+potentially_flagged_function();
+```
+
+**For golangci-lint (Go):**
+
+```go
+// Inline suppression with nolint directive
+password := getPasswordFromSecureSource() //nolint:gosec // G101: password read from secure vault, not hardcoded
+
+// Suppress for entire function
+//nolint:gocyclo // Complex logic required for state machine
+func complexStateHandler() {
+    // ...
+}
+
+// Suppress specific linter
+//nolint:errcheck // Error intentionally ignored - best effort cleanup
+defer os.Remove(tempFile)
+```
+
+**Requirements for suppressions:**
+
+- Must include clear justification
+- Requires security team review
+- Document in code review discussion
+- Prefer fixing over suppressing
+
+#### Security Issue Severity
+
+CodeChecker classifies issues by severity:
+
+- **CRITICAL** - Immediate security risk (CVE-level)
+- **HIGH** - Security vulnerability or memory corruption
+- **MEDIUM** - Potential security issue or code smell
+- **LOW** - Minor issues or style violations
+- **STYLE** - Coding standard violations
+
+**Build Policy:**
+
+- CRITICAL/HIGH: Always block merge
+- MEDIUM: Block if security-related
+- LOW: Warning only
+- STYLE: Informational
+
+#### Continuous Improvement
+
+**Security debt management:**
+
+1. **Weekly**: Review new CodeChecker findings
+2. **Monthly**: Reduce baseline issue count by 10%
+3. **Quarterly**: Security audit of all HIGH severity issues
+4. **Yearly**: Full codebase security review
+
+**Metrics tracked:**
+
+- Total issues (by severity)
+- New issues per PR
+- Issue resolution time
+- Security fixes per release
+- Code coverage improvement
+
+#### Integration with Development
+
+**Pre-commit hooks** (optional):
+
+```bash
+# Add to .git/hooks/pre-commit
+#!/bin/bash
+make -C device-app clean
+make -C device-app
+CodeChecker analyze --output /tmp/cc_reports compile_commands.json
+CodeChecker parse --baseline reports.baseline /tmp/cc_reports
+if [ $? -ne 0 ]; then
+    echo "❌ CodeChecker found new issues. Fix them before committing."
+    exit 1
+fi
+```
+
+#### Additional Resources
+
+- **CodeChecker Documentation**: <https://codechecker.readthedocs.io/>
+- **CERT C Coding Standards**: <https://wiki.sei.cmu.edu/confluence/display/c>
+- **CWE Database**: <https://cwe.mitre.org/>
+- **Clang Static Analyzer**: <https://clang-analyzer.llvm.org/>
+- **Project Reports**: See `reports/` directory for latest analysis
 
 ---
 
