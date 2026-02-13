@@ -19,7 +19,6 @@
   ],
   "analyze": [
     "--jobs=4",
-    "--verbose=debug",
     "--clean"
   ],
   "store": []
