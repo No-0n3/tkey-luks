@@ -825,8 +825,11 @@ func main() {
 
 	// Convert challenge string to bytes
 	challenge := []byte(challengeStr)
-	le.Printf("Using challenge: %q (%d bytes)", challengeStr, len(challenge))
 
+	if(verbose) {
+		le.Printf("Using challenge: %q (%d bytes)", challengeStr, len(challenge))
+	}
+	
 	// Set challenge size
 	if err := tkey.SetChallenge(len(challenge)); err != nil {
 		le.Fatalf("Failed to set challenge: %v", err)
