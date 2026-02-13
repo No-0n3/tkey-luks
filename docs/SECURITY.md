@@ -300,23 +300,24 @@ tkey-luks-client \
 #### Option 1: Fresh Setup (Recommended)
 
 ```bash
-# 1. Add new key with derived USS
-echo "your-password" | sudo tkey-luks-client \
-  --challenge-from-stdin \
+# 1. Generate new key with derived USS
+sudo tkey-luks-client \
+  --challenge-prompt \
   --derive-uss \
-  --output - | \
-sudo cryptsetup luksAddKey /dev/nvme0n1p6 -
+  --output /tmp/tkey-key.bin
 
-# 2. Test new key works
-echo "your-password" | sudo tkey-luks-client \
-  --challenge-from-stdin \
-  --derive-uss \
-  --output /tmp/test-key.bin
+# 2. Add to LUKS (enter existing password when prompted)
+sudo cryptsetup luksAddKey /dev/nvme0n1p6 /tmp/tkey-key.bin
 
+# 3. Test new key works
 sudo cryptsetup luksOpen /dev/nvme0n1p6 test-mapper \
-  --key-file=/tmp/test-key.bin
+  --key-file=/tmp/tkey-key.bin
+sudo cryptsetup luksClose test-mapper
 
-# 3. If successful, update initramfs and reboot to test
+# 4. Clean up temporary file
+sudo shred -u /tmp/tkey-key.bin
+
+# 5. If successful, update initramfs and reboot to test
 sudo update-initramfs -u
 sudo reboot
 
