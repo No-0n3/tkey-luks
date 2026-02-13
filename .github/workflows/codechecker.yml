@@ -1,4 +1,4 @@
-name: CodeChecker Static Analysis
+name: SAST - Static Analysis Security Testing
 
 on:
   push:
@@ -50,6 +50,34 @@ jobs:
           llvm-version: 'latest'
           ctu: false
           config: ${{ github.workspace }}/.codechecker.json
+      
+      - name: Convert CodeChecker results to SARIF
+        if: always()
+        continue-on-error: true
+        run: |
+          RESULT_DIR="${{ steps.codechecker.outputs.result-html-dir }}"
+          
+          if [ -d "$RESULT_DIR" ]; then
+            # CodeChecker parse can export to SARIF format
+            CodeChecker parse \
+              --export sarif \
+              --output codechecker.sarif \
+              "$RESULT_DIR/../codechecker_reports" || true
+            
+            if [ -f "codechecker.sarif" ]; then
+              echo "✅ Generated SARIF report: codechecker.sarif"
+              ls -lh codechecker.sarif
+            else
+              echo "⚠️ Failed to generate SARIF report"
+            fi
+          fi
+      
+      - name: Upload CodeChecker SARIF to Security tab
+        if: always() && hashFiles('codechecker.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: codechecker.sarif
+          category: codechecker-c-cpp
       
       - name: Check outputs and summary
         run: |
@@ -157,3 +185,128 @@ jobs:
           echo "ℹ️ Consider reviewing and fixing these issues"
           echo ""
           echo "::warning title=Code Quality Issues::Static analysis found issues. While not blocking, consider reviewing them for code quality improvements."
+  
+  golangci-lint:
+    name: Go SAST (golangci-lint)
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'client/go.mod'
+          cache-dependency-path: 'client/go.sum'
+      
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        id: golangci
+        with:
+          version: latest
+          working-directory: client
+          args: --config=.golangci.yml --out-format=json:golangci-report.json,sarif:golangci-report.sarif,colored-line-number
+          only-new-issues: false
+          skip-cache: false
+      
+      - name: Parse golangci-lint results
+        id: go_security_check
+        if: always()
+        working-directory: client
+        run: |
+          if [ ! -f "golangci-report.json" ]; then
+            echo "security_issues=0" >> $GITHUB_OUTPUT
+            echo "total_issues=0" >> $GITHUB_OUTPUT
+            echo "✅ No golangci-lint report found (likely no issues)"
+            exit 0
+          fi
+          
+          # Count security-related issues (gosec, G* rules)
+          SECURITY_COUNT=$(jq '[.Issues[] | select(.FromLinter == "gosec")] | length' golangci-report.json || echo "0")
+          TOTAL_COUNT=$(jq '.Issues | length' golangci-report.json || echo "0")
+          
+          echo "security_issues=$SECURITY_COUNT" >> $GITHUB_OUTPUT
+          echo "total_issues=$TOTAL_COUNT" >> $GITHUB_OUTPUT
+          
+          echo "## 🔍 Go Static Analysis Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Total Issues:** $TOTAL_COUNT" >> $GITHUB_STEP_SUMMARY
+          echo "- **Security Issues (gosec):** $SECURITY_COUNT" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "$SECURITY_COUNT" -gt 0 ]; then
+            echo "### 🔒 Security Issues Found:" >> $GITHUB_STEP_SUMMARY
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            jq '[.Issues[] | select(.FromLinter == "gosec")] | .[0:10]' golangci-report.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+      
+      - name: Upload golangci-lint reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: golangci-lint-reports
+          path: |
+            client/golangci-report.json
+            client/golangci-report.sarif
+          retention-days: 30
+      
+      - name: Upload golangci-lint SARIF to Security tab
+        if: always() && hashFiles('client/golangci-report.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: client/golangci-report.sarif
+          category: golangci-lint-go
+      
+      - name: Comment on PR with Go results
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const totalIssues = '${{ steps.go_security_check.outputs.total_issues }}';
+            const securityIssues = '${{ steps.go_security_check.outputs.security_issues }}';
+            
+            let comment = '## 🔍 Go Static Analysis Results (golangci-lint)\n\n';
+            
+            if (totalIssues === '0') {
+              comment += '✅ **No issues found** - Excellent!\n\n';
+            } else {
+              comment += `⚠️ **${totalIssues} issues detected**\n\n`;
+              
+              if (securityIssues !== '0') {
+                comment += `🔒 **Security Issues (gosec):** ${securityIssues}\n\n`;
+                comment += '❌ **Action Required:** Please review and fix security issues before merging.\n\n';
+              }
+            }
+            
+            comment += '📦 **Full reports** available in workflow artifacts: [Download Reports](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})\n';
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+      
+      - name: Fail on security issues
+        if: steps.go_security_check.outputs.security_issues != '0'
+        run: |
+          SECURITY_COUNT="${{ steps.go_security_check.outputs.security_issues }}"
+          echo "❌ FAILED: Found $SECURITY_COUNT Go security issues (gosec)"
+          echo "❌ Security gate: Go security issues must be fixed before merging"
+          echo ""
+          echo "::error title=Go Security Issues Found::Found $SECURITY_COUNT security issues detected by gosec. Review the uploaded artifacts for details."
+          exit 1
+      
+      - name: Warn on code quality issues
+        if: steps.go_security_check.outputs.total_issues != '0' && steps.go_security_check.outputs.security_issues == '0'
+        run: |
+          TOTAL_COUNT="${{ steps.go_security_check.outputs.total_issues }}"
+          echo "⚠️ WARNING: Found $TOTAL_COUNT Go code quality issues"
+          echo "ℹ️ Consider reviewing and fixing these issues"
+          echo ""
+          echo "::warning title=Go Code Quality Issues::golangci-lint found $TOTAL_COUNT issues. While not blocking, consider reviewing them for code quality improvements."
